@@ -1,0 +1,99 @@
+name: 🐛 Bug report
+description: Report something that's broken or behaving unexpectedly.
+title: "bug: <short description>"
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill in as much detail as you can.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Clear, concise description of the bug.
+      placeholder: When I click X, I expect Y, but Z happens instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal reproducible steps.
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: version
+    attributes:
+      label: pz-crcon version
+      description: Commit SHA or release tag.
+      options:
+        - "main (latest)"
+        - "other (specify below)"
+    validations:
+      required: true
+
+  - type: input
+    id: version_other
+    attributes:
+      label: Specific version / commit
+      placeholder: "e.g. v0.1.0 or commit abc1234"
+
+  - type: dropdown
+    id: pz_build
+    attributes:
+      label: Project Zomboid build
+      options:
+        - "B42 (unstable)"
+        - "B41 (stable)"
+        - "Other"
+    validations:
+      required: true
+
+  - type: input
+    id: deployment
+    attributes:
+      label: Deployment environment
+      placeholder: "e.g. Docker on Ubuntu 22.04 / Portainer / bare-metal"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant logs from `docker logs`, browser console, or server logs.
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, network traces, anything else useful.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+        - label: I am running a supported version
+          required: true
+        - label: My logs contain no secrets / passwords / tokens
+          required: true

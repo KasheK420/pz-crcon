@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions & discussions
+    url: https://github.com/KasheK420/pz-crcon/discussions
+    about: Ask questions, share ideas, or chat with the community.
+  - name: 🔒 Security vulnerabilities
+    url: https://github.com/KasheK420/pz-crcon/security/advisories/new
+    about: Report a security issue privately. Do NOT use public issues.
+  - name: 📖 Project Zomboid official forums
+    url: https://theindiestone.com/forums/
+    about: Questions about Project Zomboid itself belong here, not in pz-crcon.

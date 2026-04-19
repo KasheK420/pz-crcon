@@ -1,0 +1,10 @@
+# All changes require review from the project owner.
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @KasheK420
+
+# Security-sensitive paths
+SECURITY.md                   @KasheK420
+.github/workflows/            @KasheK420
+.github/dependabot.yml        @KasheK420
+.github/CODEOWNERS            @KasheK420

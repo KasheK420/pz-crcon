@@ -1,0 +1,43 @@
+title = "pz-crcon gitleaks config"
+
+# Based on default gitleaks ruleset, with pz-crcon specific additions.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "pz-rcon-password-env"
+description = "Possible leaked PZ RCON password as environment variable value"
+regex = '''(?i)(PZ_RCON_PASSWORD|RCON_PASSWORD)\s*=\s*["']?([A-Za-z0-9!@#\$%\^&\*_\-+=]{8,})["']?'''
+tags = ["password", "pz-crcon"]
+
+[[rules]]
+id = "discord-bot-token"
+description = "Discord bot token"
+regex = '''[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27,}'''
+tags = ["token", "discord"]
+
+[[rules]]
+id = "dockerhub-pat"
+description = "Docker Hub personal access token"
+regex = '''dckr_pat_[A-Za-z0-9_\-]{27,}'''
+tags = ["token", "docker"]
+
+[[rules]]
+id = "cloudflare-tunnel-token"
+description = "Cloudflare tunnel JWT-looking token"
+regex = '''eyJ[A-Za-z0-9_\-]{40,}\.eyJ[A-Za-z0-9_\-]{40,}\.[A-Za-z0-9_\-]{20,}'''
+tags = ["token", "cloudflare"]
+
+[allowlist]
+description = "Ignore examples and documentation"
+paths = [
+  '''\.env\.example''',
+  '''CHANGELOG\.md''',
+  '''docs/examples/.*''',
+]
+regexes = [
+  '''CHANGE_ME''',
+  '''<.*>''',
+  '''example''',
+]
