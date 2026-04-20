@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Project status: Alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
+[![Project status: v0.1.0 MVP](https://img.shields.io/badge/status-v0.1.0%20MVP-blue.svg)](#status)
 [![Project Zomboid: Build 42](https://img.shields.io/badge/PZ-Build%2042-green.svg)](https://projectzomboid.com)
 
 ---
@@ -17,7 +17,17 @@ It also ships with an optional **server-side Lua mod** that streams live player 
 
 ## Status
 
-🚧 **Alpha — under active development.** No stable release yet. Architecture and feature set are being designed openly. See [project board](https://github.com/KasheK420/pz-crcon/projects) and [discussions](https://github.com/KasheK420/pz-crcon/discussions).
+**v0.1.0 — Phase 1 MVP shipped.** Live at <https://pz.majorluk.pl>.
+
+What works today:
+
+- Discord OAuth login (allowlist via `DISCORD_ADMIN_IDS` — first ID becomes OWNER, rest become ADMIN; no Discord bot or guild required)
+- Public map page (server status, mod list, anonymous access)
+- Admin overview dashboard
+- Live RCON terminal with WebSocket-streamed output
+- Player list with kick/ban via UI (audit-logged)
+
+Phases 2–4 (visual config editor, mod manager, logs viewer, backups, schedules, Lua mod webhook) are on the roadmap below. See [project board](https://github.com/KasheK420/pz-crcon/projects) and [discussions](https://github.com/KasheK420/pz-crcon/discussions).
 
 ## Planned Features
 
@@ -56,25 +66,51 @@ It also ships with an optional **server-side Lua mod** that streams live player 
                                   ▼
                           ┌─────────────────┐
                           │  Discord OAuth  │
-                          │  + bot          │
+                          │  (identity only)│
                           └─────────────────┘
 ```
 
-Detailed architecture documents will live in [`docs/`](docs/).
+Detailed architecture documents live in [`docs/`](docs/) — see
+[`docs/deployment.md`](docs/deployment.md) for the operator runbook.
 
 ## Quick Start
 
-> ⚠️ Not yet usable. Watch the repo to be notified at v0.1.0.
+### Run the prebuilt image (recommended)
 
-When ready:
+```bash
+mkdir -p pz-crcon && cd pz-crcon
+curl -O https://raw.githubusercontent.com/KasheK420/pz-crcon/main/docker/docker-compose.deploy.yml
+mv docker-compose.deploy.yml docker-compose.yml
+curl -O https://raw.githubusercontent.com/KasheK420/pz-crcon/main/.env.example
+cp .env.example .env
+# fill in: NEXTAUTH_SECRET, DATABASE_URL, DISCORD_CLIENT_ID/SECRET,
+#          DISCORD_ADMIN_IDS (your Discord user ID), RCON_*
+docker compose up -d
+docker exec -it pz-crcon npx prisma migrate deploy
+```
+
+Open <http://localhost:3000>, sign in with Discord, and you're in.
+
+### Local dev from source
 
 ```bash
 git clone https://github.com/KasheK420/pz-crcon.git
 cd pz-crcon
-cp .env.example .env
-# fill in PZ RCON details, Discord OAuth, etc.
-docker compose up -d
+cp .env.example .env  # fill in
+docker compose -f docker/docker-compose.yml up -d  # local Postgres only
+pnpm install
+pnpm db:generate
+pnpm db:migrate
+pnpm dev
 ```
+
+### Auth model (no Discord bot required)
+
+Authorization is a static allowlist: `DISCORD_ADMIN_IDS` is a
+comma-separated list of Discord numeric user IDs. The **first** ID
+becomes `OWNER` on first login; the rest become `ADMIN`. Anyone not
+listed is rejected at the OAuth callback. No bot token, no guild check,
+no role management — just an env var.
 
 ## Contributing
 
