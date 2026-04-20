@@ -17,6 +17,20 @@ const baseEnv: Record<string, string> = {
   WEBHOOK_HMAC_SECRET: "y".repeat(32),
 };
 
+// Snapshot of the original env so we can clear and restore around each test.
+// Required because CI workflows often inject env vars at the job level
+// (e.g. DATABASE_URL=...), which would survive vi.stubEnv() and defeat
+// "missing X" assertions.
+const ORIGINAL_ENV = { ...process.env };
+
+function clearAllRelevant() {
+  for (const k of Object.keys(ORIGINAL_ENV)) {
+    if (k in baseEnv || k.startsWith("DISCORD_") || k.startsWith("RCON_") || k.startsWith("PZ_") || k === "WEBHOOK_HMAC_SECRET" || k === "BACKUP_PATH" || k === "BACKUP_RETENTION_DAYS" || k === "BOOTSTRAP_OWNER_DISCORD_ID" || k === "DATABASE_URL" || k === "APP_URL" || k === "NEXTAUTH_SECRET" || k === "LOG_LEVEL" || k === "WS_HEARTBEAT_SEC") {
+      delete process.env[k];
+    }
+  }
+}
+
 function stub(env: Record<string, string>) {
   for (const [k, v] of Object.entries(env)) vi.stubEnv(k, v);
 }
@@ -24,10 +38,15 @@ function stub(env: Record<string, string>) {
 describe("loadEnv", () => {
   beforeEach(() => {
     vi.resetModules();
+    clearAllRelevant();
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    // restore original env
+    for (const [k, v] of Object.entries(ORIGINAL_ENV)) {
+      if (v !== undefined) process.env[k] = v;
+    }
   });
 
   it("parses a complete environment", async () => {
