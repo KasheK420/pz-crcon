@@ -19,7 +19,6 @@ import { describe, it, expect } from "vitest";
 
 const PROXY_URL = process.env.DOCKER_PROXY_TEST_URL ?? "http://localhost:2375";
 const enabled = process.env.DOCKER_IN_DOCKER === "1";
-const skip = enabled ? undefined : "DOCKER_IN_DOCKER not set — skipping";
 
 // `itif` is a tiny helper so the test file still registers cleanly when
 // the smoke harness is not configured. All cases then show as "skipped".
@@ -54,7 +53,7 @@ if (enabled) {
   });
 }
 
-describe("docker-socket-proxy endpoint matrix", { skip }, () => {
+describe("docker-socket-proxy endpoint matrix", () => {
   itif("GET /_ping is allowed", async () => {
     const r = await fetch(`${PROXY_URL}/_ping`);
     expect(r.status).toBe(200);
