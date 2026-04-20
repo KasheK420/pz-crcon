@@ -3,7 +3,7 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth/session";
 import { atLeast } from "@/lib/auth/role";
 import { ConfigTabs } from "@/components/config/config-tabs";
-import { readSandboxVars, readServerIni } from "@/lib/pz/config-reader";
+import { checkConfigAccess } from "@/lib/pz/access-check";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,12 @@ export default async function ConfigPage() {
     );
   }
 
-  const [ini, sandbox] = await Promise.all([readServerIni(), readSandboxVars()]);
+  // Probe FS readiness up-front so the page can surface a helpful banner
+  // if the config volume isn't mounted / the uid:gid permissions are off.
+  // The client tabs also tolerate a 503 from their own GET, but this
+  // banner gives operators a concrete diagnosis string.
+  const access = await checkConfigAccess();
+  const canEdit = atLeast(session.role, "OWNER");
 
   return (
     <div className="flex flex-col gap-4">
@@ -28,14 +33,37 @@ export default async function ConfigPage() {
           SERVER <span className="text-pz-primary">{"//"}</span> CONFIG
         </div>
         <span className="pz-pill pz-mono">{session.role}</span>
-        <span className="pz-pill pz-mono text-pz-muted">{ini.prefix}.ini</span>
+        {canEdit ? (
+          <span className="pz-pill pz-mono live">EDIT</span>
+        ) : (
+          <span
+            className="pz-pill pz-mono"
+            title="OWNER required to save changes"
+          >
+            READ-ONLY
+          </span>
+        )}
       </div>
 
+      {!access.ok && (
+        <div className="bg-pz-danger/15 border border-pz-danger text-pz-text text-[12px] px-3 py-2">
+          <strong className="pz-display-h text-pz-danger">
+            Config volume unreachable.
+          </strong>{" "}
+          Reads and writes will fail until fixed.{" "}
+          <span className="pz-mono text-pz-muted">
+            dir={access.dir}
+            {access.reason ? ` · reason=${access.reason}` : ""}
+          </span>
+        </div>
+      )}
+
       <div className="bg-pz-bg-1 border border-pz-border-lo px-3 py-2 text-[12px] text-pz-text-dim">
-        <strong className="text-pz-text">Read-only.</strong> Editing lands in Phase 2 (v0.2.0). To
-        change a value today: edit the file on disk and run RCON{" "}
-        <code className="pz-mono">reloadoptions</code>, or use{" "}
-        <code className="pz-mono">changeoption</code> for live tweaks.{" "}
+        <strong className="text-pz-text">Tip.</strong> OWNERs can edit both
+        files here; saves are atomic with a per-file <code className="pz-mono">.backups/</code>{" "}
+        snapshot and an optimistic-concurrency mtime check. Most keys require
+        a PZ server restart to take effect — restart controls land in
+        Chunk 5.{" "}
         <Link
           href="https://pzwiki.net/wiki/Server_settings"
           target="_blank"
@@ -56,25 +84,7 @@ export default async function ConfigPage() {
         .
       </div>
 
-      <ConfigTabs
-        ini={{
-          ok: ini.ok,
-          path: ini.path,
-          prefix: ini.prefix,
-          error: ini.error,
-          entries: ini.parsed?.entries.map((e) => ({
-            key: e.key,
-            value: e.value,
-          })),
-        }}
-        sandbox={{
-          ok: sandbox.ok,
-          path: sandbox.path,
-          prefix: sandbox.prefix,
-          error: sandbox.error,
-          sections: sandbox.parsed?.sections,
-        }}
-      />
+      <ConfigTabs role={session.role} />
     </div>
   );
 }
