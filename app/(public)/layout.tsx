@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth/session";
+import { SignInButton } from "@/components/public/sign-in-button";
 
 export default async function PublicLayout({
   children,
@@ -16,24 +17,11 @@ export default async function PublicLayout({
           </Link>
           <div className="flex items-center gap-4 text-xs">
             {session ? (
-              <Link
-                href="/admin"
-                className="pz-pill live"
-              >
+              <Link href="/admin" className="pz-pill live">
                 ADMIN PANEL ({session.role})
               </Link>
             ) : (
-              <Link
-                href="/api/auth/signin/discord"
-                className="pz-pill"
-                style={{
-                  background: "#5865f2",
-                  color: "white",
-                  textDecoration: "none",
-                }}
-              >
-                Sign in with Discord
-              </Link>
+              <SignInButton />
             )}
           </div>
         </div>
