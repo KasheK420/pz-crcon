@@ -1,28 +1,528 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================
+   PZ design tokens — namespaced to avoid colliding with shadcn
+   ============================================================ */
 @theme {
   --color-pz-bg: #0d0e0c;
+  --color-pz-bg-0: #0b0d0a;
+  --color-pz-bg-1: #111410;
+  --color-pz-bg-2: #171a15;
+  --color-pz-bg-3: #1d211a;
   --color-pz-bg-deep: #07080a;
   --color-pz-surface: #23261f;
   --color-pz-surface-2: #2a2d24;
+  --color-pz-surface-hi: #2b2f26;
   --color-pz-border: #3a3f33;
+  --color-pz-border-hi: #4b5140;
+  --color-pz-border-lo: #2a2e24;
 
   --color-pz-primary: #7da348;
   --color-pz-primary-dim: #5a7a2f;
   --color-pz-accent: #d4a017;
+  --color-pz-accent-dim: #8c6a0f;
   --color-pz-danger: #a02c2c;
+  --color-pz-danger-dim: #6e1f1f;
+  --color-pz-info: #5e8aa8;
 
   --color-pz-text: #e8e6dc;
+  --color-pz-text-dim: #b4b5a8;
   --color-pz-muted: #8a8c80;
+  --color-pz-text-faint: #5e6055;
 
   --font-display: "Oswald", sans-serif;
   --font-body: "Inter", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 }
 
-html,
-body {
-  background-color: var(--color-pz-bg);
+/* shadcn token bindings */
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* shadcn default light palette — kept for shadcn primitives; overridden in dark */
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* pz-* runtime vars (tweakable via TweaksPanel) */
+  --grain-opacity: 0.045;
+  --scanline-opacity: 0.06;
+  --sidebar-w: 232px;
+  --topbar-h: 48px;
+  --pz-radius: 3px;
+  --pz-radius-lg: 5px;
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--color-pz-bg-0, #0b0d0a);
+    color: var(--color-pz-text);
+    font-family: var(--font-body);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* ============================================================
+   PZ Design System — ported from Claude Design handoff
+   (Chunk 3: shell, topbar, sidebar, FX overlays, tweaks panel,
+   decorative stencil/hazard accents. Terminal / table / panel
+   styles intentionally deferred to Chunk 4.)
+   ============================================================ */
+
+/* --- Typography display classes (non-Tailwind naming) --- */
+.pz-display {
+  font-family: "Oswald", "Impact", sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.stencil {
+  font-family: "Oswald", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pz-mono {
+  font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
+  font-feature-settings: "zero", "ss01";
+}
+
+/* `.label` collides with the Tailwind-less shadcn Label primitive only semantically, but the plan's tweaks markup uses it. Keep as a tiny decorative utility scoped to where we use it inside .tweaks; don't style generically. */
+
+.label-hazard {
+  font-family: "Oswald", sans-serif;
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* --- FX overlays (grain, scanlines, vignette) --- */
+.app-fx {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 999;
+}
+.app-fx .grain {
+  position: absolute;
+  inset: 0;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.9 0 0 0 0 0.88 0 0 0 0 0.78 0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  mix-blend-mode: overlay;
+}
+.app-fx .scanlines {
+  position: absolute;
+  inset: 0;
+  opacity: var(--scanline-opacity);
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.05) 0px,
+    rgba(255, 255, 255, 0.05) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+.app-fx .vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 50%,
+    rgba(0, 0, 0, 0.55) 100%
+  );
+}
+
+/* --- Layout shell --- */
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--color-pz-bg-1, #111410);
+  border-right: 1px solid var(--color-pz-border-lo, #2a2e24);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  flex-shrink: 0;
+}
+
+.sidebar-brand {
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--color-pz-border-lo, #2a2e24);
+  font-family: "Oswald", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 14px;
   color: var(--color-pz-text);
-  font-family: var(--font-body);
+}
+
+.sidebar-group {
+  padding: 14px 6px 6px;
+}
+
+.sidebar-group-label {
+  padding: 0 10px 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-pz-muted);
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--color-pz-text-dim, #b4b5a8);
+  border-radius: var(--pz-radius, 3px);
+  cursor: pointer;
+  user-select: none;
+  border-left: 2px solid transparent;
+  margin-bottom: 1px;
+  text-decoration: none;
+}
+.sidebar-item:hover {
+  background: var(--color-pz-bg-2, #171a15);
+  color: var(--color-pz-text);
+}
+.sidebar-item.active {
+  background: var(--color-pz-bg-2, #171a15);
+  color: var(--color-pz-text);
+  border-left-color: var(--color-pz-primary);
+}
+
+/* --- Main column --- */
+.main {
+  flex: 1;
+  min-width: 0;
+  background: var(--color-pz-bg-0, #0b0d0a);
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Topbar --- */
+.topbar {
+  height: var(--topbar-h);
+  border-bottom: 1px solid var(--color-pz-border-lo, #2a2e24);
+  background: var(--color-pz-bg-1, #111410);
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.topbar-title {
+  font-family: "Oswald", sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-pz-text);
+  margin: 0;
+}
+.topbar-trail {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.topbar-user,
+.topbar-login {
+  background: transparent;
+  border: 1px solid var(--color-pz-border-lo, #2a2e24);
+  color: var(--color-pz-text-dim, #b4b5a8);
+  padding: 4px 10px;
+  border-radius: var(--pz-radius, 3px);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-decoration: none;
+}
+.topbar-user:hover,
+.topbar-login:hover {
+  background: var(--color-pz-bg-2, #171a15);
+  color: var(--color-pz-text);
+  border-color: var(--color-pz-border-hi, #4b5140);
+}
+
+.page-content {
+  padding: 18px 22px 40px;
+  flex: 1;
+}
+
+/* --- Live dot + pulse animation --- */
+.live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-pz-primary);
+  box-shadow: 0 0 0 0 rgba(125, 163, 72, 0.22);
+  animation: pulse 1.8s ease-out infinite;
+}
+.live-dot.warn {
+  background: var(--color-pz-accent);
+  animation-name: pulse-warn;
+}
+.live-dot.down {
+  background: var(--color-pz-danger);
+  animation: none;
+}
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(125, 163, 72, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(125, 163, 72, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(125, 163, 72, 0);
+  }
+}
+@keyframes pulse-warn {
+  0% {
+    box-shadow: 0 0 0 0 rgba(212, 160, 23, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(212, 160, 23, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(212, 160, 23, 0);
+  }
+}
+
+/* --- Decorative accents --- */
+.hazard-tape {
+  height: 6px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--color-pz-accent) 0 14px,
+    #1a1c18 14px 28px
+  );
+  opacity: 0.6;
+}
+
+.corner-tick {
+  position: relative;
+}
+.corner-tick::before,
+.corner-tick::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--color-pz-border-hi, #4b5140);
+}
+.corner-tick::before {
+  top: -1px;
+  left: -1px;
+  border-right: none;
+  border-bottom: none;
+}
+.corner-tick::after {
+  bottom: -1px;
+  right: -1px;
+  border-left: none;
+  border-top: none;
+}
+
+/* --- Scrollbars (webkit) --- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-pz-bg-0, #0b0d0a);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-pz-border-lo, #2a2e24);
+  border-radius: 5px;
+  border: 2px solid var(--color-pz-bg-0, #0b0d0a);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-pz-border-hi, #4b5140);
+}
+
+/* --- Tweaks panel (floating) --- */
+.tweaks {
+  position: fixed;
+  bottom: 18px;
+  right: 18px;
+  width: 280px;
+  background: var(--color-pz-bg-1, #111410);
+  border: 1px solid var(--color-pz-border);
+  border-radius: var(--pz-radius, 3px);
+  z-index: 500;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  color: var(--color-pz-text);
+}
+.tweaks-head {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-pz-border-lo, #2a2e24);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tweaks-body {
+  padding: 10px 12px;
+}
+.tweak-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  gap: 10px;
+}
+.tweak-row .label {
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-pz-muted);
+}
+.tweak-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--color-pz-primary);
+}
+.tweak-row select {
+  background: var(--color-pz-bg-2, #171a15);
+  color: var(--color-pz-text);
+  border: 1px solid var(--color-pz-border-lo, #2a2e24);
+  border-radius: 2px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  padding: 2px 4px;
 }
