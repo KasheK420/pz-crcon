@@ -1,0 +1,57 @@
+services:
+  pz-crcon:
+    image: majorluk/pz-crcon:latest
+    container_name: pz-crcon
+    restart: unless-stopped
+    user: "1000:1000"
+    networks: [proxy-net, db-net, pz-control-net]
+    env_file: [.env]
+    volumes:
+      - pz-data:/pz-data:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      PZ_CONFIG_DIR: /pz-data/Server
+      PZ_SERVER_DIR: /pz-data/Server
+      DOCKER_CONTROL_URL: http://docker-socket-proxy:2375
+      PZ_CONTAINER_NAME: pz-server
+      PZ_BACKUP_DIR: /pz-data/Server/.backups
+    labels: ["com.centurylinklabs.watchtower.enable=true"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: pz-crcon-socket-proxy
+    restart: unless-stopped
+    read_only: true
+    networks: [pz-control-net]
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      CONTAINERS_START: 1
+      CONTAINERS_STOP: 1
+      CONTAINERS_RESTART: 1
+      CONTAINERS_KILL: 1
+      EXEC: 0
+      VOLUMES: 0
+      NETWORKS: 0
+      IMAGES: 0
+      SYSTEM: 0
+      INFO: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+volumes:
+  pz-data:
+    external: true
+
+networks:
+  proxy-net:
+    external: true
+  db-net:
+    external: true
+  pz-control-net: {}
