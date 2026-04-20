@@ -28,7 +28,7 @@
 import { Mutex } from "async-mutex";
 import { publish } from "@/lib/ws/server";
 import type { LifecyclePayload } from "@/lib/ws/channels";
-import { quitServer, saveWorld, servermsg } from "@/lib/rcon/commands";
+import { quitServer, saveWorld, servermsg } from "@/lib/rcon/server-commands";
 import {
   inspectPz,
   isProxyReachable,

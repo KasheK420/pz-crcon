@@ -48,20 +48,13 @@ const servermsgMock = vi.fn();
 const saveWorldMock = vi.fn();
 const quitServerMock = vi.fn();
 
-vi.mock("@/lib/rcon/commands", async () => {
-  // Preserve the catalog exports so any dependent modules don't break.
-  const actual = await vi.importActual<typeof import("@/lib/rcon/commands")>(
-    "@/lib/rcon/commands",
-  );
-  return {
-    ...actual,
-    servermsg: (t: string) => servermsgMock(t),
-    saveWorld: (ms?: number) => saveWorldMock(ms),
-    quitServer: () => quitServerMock(),
-    reloadOptions: () => Promise.resolve("ok"),
-    rconPing: () => Promise.resolve(true),
-  };
-});
+vi.mock("@/lib/rcon/server-commands", () => ({
+  servermsg: (t: string) => servermsgMock(t),
+  saveWorld: (ms?: number) => saveWorldMock(ms),
+  quitServer: () => quitServerMock(),
+  reloadOptions: () => Promise.resolve("ok"),
+  rconPing: () => Promise.resolve(true),
+}));
 
 vi.mock("@/lib/pz/writer", () => ({
   registerLifecyclePhaseGetter: () => {},

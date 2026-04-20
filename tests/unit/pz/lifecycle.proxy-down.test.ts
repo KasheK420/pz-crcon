@@ -42,19 +42,13 @@ vi.mock("@/lib/docker/control", () => ({
     waitForStateMock(want, ms),
 }));
 
-vi.mock("@/lib/rcon/commands", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/rcon/commands")>(
-    "@/lib/rcon/commands",
-  );
-  return {
-    ...actual,
-    servermsg: () => Promise.resolve("ok"),
-    saveWorld: () => Promise.resolve({ ok: true, response: "saved" }),
-    quitServer: () => Promise.resolve("ok"),
-    reloadOptions: () => Promise.resolve("ok"),
-    rconPing: () => Promise.resolve(true),
-  };
-});
+vi.mock("@/lib/rcon/server-commands", () => ({
+  servermsg: () => Promise.resolve("ok"),
+  saveWorld: () => Promise.resolve({ ok: true, response: "saved" }),
+  quitServer: () => Promise.resolve("ok"),
+  reloadOptions: () => Promise.resolve("ok"),
+  rconPing: () => Promise.resolve(true),
+}));
 
 vi.mock("@/lib/pz/writer", () => ({
   registerLifecyclePhaseGetter: () => {},

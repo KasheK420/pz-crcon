@@ -64,15 +64,9 @@ vi.mock("@/lib/docker/control", () => ({
   inspectPz: () => inspectPzMock(),
   isProxyReachable: () => isProxyReachableMock(),
 }));
-vi.mock("@/lib/rcon/commands", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/rcon/commands")>(
-    "@/lib/rcon/commands",
-  );
-  return {
-    ...actual,
-    rconPing: (ms?: number) => rconPingMock(ms),
-  };
-});
+vi.mock("@/lib/rcon/server-commands", () => ({
+  rconPing: (ms?: number) => rconPingMock(ms),
+}));
 vi.mock("@/lib/rcon/client", () => ({
   getFirstConnectAt: () => null,
   rconExecute: () => Promise.resolve(""),

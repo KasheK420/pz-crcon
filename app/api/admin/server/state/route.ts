@@ -24,7 +24,7 @@ import { getSession } from "@/lib/auth/session";
 import { atLeast } from "@/lib/auth/role";
 import { getDetail, getPhase } from "@/lib/server/lifecycle";
 import { inspectPz, isProxyReachable } from "@/lib/docker/control";
-import { rconPing } from "@/lib/rcon/commands";
+import { rconPing } from "@/lib/rcon/server-commands";
 import { getFirstConnectAt } from "@/lib/rcon/client";
 
 export const dynamic = "force-dynamic";
