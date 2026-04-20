@@ -80,4 +80,34 @@ describe("parseSandboxLua", () => {
     expect(r.flat.A).toBe(1);
     expect(r.flat.B).toBe(2);
   });
+
+  it("source offsets resolve to the exact raw value literal", () => {
+    const src = `SandboxVars = {\n  Zombies = {\n    Speed = 4,\n    Strength = 2,\n  },\n}\n`;
+    const p = parseSandboxLua(src);
+    for (const section of p.sections) {
+      for (const entry of section.entries) {
+        const slice = src.slice(entry.valueStart, entry.valueEnd);
+        expect(slice.trim()).toBe(String(entry.value));
+      }
+    }
+  });
+
+  it("offsets are correct for quoted strings (includes the quotes)", () => {
+    const src = `SandboxVars = {\n  Msg = "hello",\n}\n`;
+    const p = parseSandboxLua(src);
+    const msg = p.sections.find((s) => s.name === "_root")?.entries.find((e) => e.key === "Msg");
+    expect(msg).toBeDefined();
+    expect(src.slice(msg!.valueStart, msg!.valueEnd)).toBe('"hello"');
+    expect(msg!.value).toBe("hello");
+  });
+
+  it("offsets survive surrounding comments (mask preserves positions)", () => {
+    const src = `SandboxVars = {\n  -- leading comment\n  A = 42, -- trailing\n  B = 7,\n}\n`;
+    const p = parseSandboxLua(src);
+    const root = p.sections.find((s) => s.name === "_root");
+    const a = root?.entries.find((e) => e.key === "A");
+    const b = root?.entries.find((e) => e.key === "B");
+    expect(src.slice(a!.valueStart, a!.valueEnd)).toBe("42");
+    expect(src.slice(b!.valueStart, b!.valueEnd)).toBe("7");
+  });
 });
