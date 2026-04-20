@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Phase 1.6: Admin tools
+- Full RCON command catalog expanded from 19 to 45 commands
+  (`lib/rcon/commands.ts`) with categories (server / player / chat /
+  world / moderation / whitelist / debug / replay) and example payloads
+- Categorised cheat-sheet sidebar on `/admin/rcon` with collapsible
+  sections, search, role gating, and one-click "Insert example"
+  buttons that paste into the terminal input
+- Live param hint under the RCON terminal input showing the current
+  command's signature and required role
+- New `/admin/startup` page (OWNER+) — read-only view of the pz-server
+  container's image, entrypoint, command, env vars, restart policy,
+  and bind mounts; sensitive values auto-masked
+- New `/admin/config` page (VIEWER+) — two tabs reading the live
+  `<servername>.ini` and `<servername>_SandboxVars.lua` from the
+  pz-server container with parsed key/value display, hint descriptions,
+  and "requires restart" tags
+- New `/admin/whitelist` page (ADMIN+) — Steam ID-based whitelist
+  registry with add form, source-of-truth table, audit log entries,
+  and best-effort `removeuserfromwhitelist` RCON invocation when a
+  real username is known
+- New `lib/pz/parse-ini.ts`, `lib/pz/parse-sandbox-lua.ts`, and
+  `lib/pz/config-reader.ts` (regex-based parsers + dockerode `cat`
+  reader, with unit tests)
+- New `lib/docker/client.ts` helpers: `inspectContainer`, `envMapFrom`,
+  and `readContainerFile` (multiplexed-frame demuxing of dockerode
+  exec output)
+- New `app/api/whitelist` (GET/POST/DELETE) with Steam ID validation,
+  zod request bodies, and `AdminAction` audit rows
+- Sidebar entries for Whitelist / Server Config / Startup Config
+
+### Changed — Phase 1.6
+- `Player` model: added `whitelistedAt: DateTime?` and
+  `whitelistedById: String?` columns to track who whitelisted a player
+  and when (apply via `pnpm prisma db push` on prod)
+- `RconCommandSpec` now includes `category` and `examples` fields
+- RCON terminal extracted into `RconShell` so the cheat sheet can drive
+  the input via a `useImperativeHandle` ref
+
 ### Added — Phase 1.5: Polish & Observability
 - PZ-themed favicon (`app/icon.svg` + `app/apple-icon.svg`) and OpenGraph
   / Twitter card SVG for richer link previews

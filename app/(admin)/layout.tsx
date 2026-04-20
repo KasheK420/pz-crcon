@@ -5,11 +5,7 @@ import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { TweaksPanel } from "@/components/shell/tweaks-panel";
 
-export default async function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
   if (!session) {
     redirect("/api/auth/signin/discord");
@@ -39,6 +35,9 @@ function titleFor(path: string): string {
   if (path === "/admin") return "Overview";
   if (path === "/admin/rcon") return "RCON Terminal";
   if (path === "/admin/players") return "Players";
+  if (path === "/admin/whitelist") return "Whitelist";
   if (path === "/admin/logs") return "Server Logs";
+  if (path === "/admin/config") return "Server Config";
+  if (path === "/admin/startup") return "Startup Config";
   return "Admin";
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
 import { RCON_COMMANDS, findCommand } from "@/lib/rcon/commands";
 import { parseRconLine } from "@/lib/rcon/parsers";
 import { atLeast, type Role } from "@/lib/auth/role";
@@ -10,12 +10,20 @@ interface Props {
   role: Role;
 }
 
+export interface RconTerminalHandle {
+  /** Inject text into the input box and focus it. */
+  insertCommand: (text: string) => void;
+}
+
 function buildWsUrl(): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${window.location.host}/api/ws`;
 }
 
-export function RconTerminal({ role }: Props) {
+export const RconTerminal = forwardRef<RconTerminalHandle, Props>(function RconTerminal(
+  { role },
+  ref,
+) {
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [histIdx, setHistIdx] = useState(-1);
@@ -27,7 +35,7 @@ export function RconTerminal({ role }: Props) {
     },
     {
       kind: "info",
-      text: "[SYS] ↑/↓ cycles history · Tab autocompletes · Filter narrows output.",
+      text: "[SYS] ↑/↓ cycles history · Tab autocompletes · click ↵ Insert in cheat sheet to paste examples.",
       ts: Date.now(),
     },
   ]);
@@ -35,6 +43,29 @@ export function RconTerminal({ role }: Props) {
   const [pending, setPending] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const outRef = useRef<HTMLDivElement>(null);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      insertCommand: (text: string) => {
+        setInput(text);
+        // Focus and place caret at end on next tick.
+        setTimeout(() => {
+          const el = inputRef.current;
+          if (el) {
+            el.focus();
+            const len = text.length;
+            try {
+              el.setSelectionRange(len, len);
+            } catch {
+              // ignore unsupported input types
+            }
+          }
+        }, 0);
+      },
+    }),
+    [],
+  );
 
   // Live updates from other admins via WS.
   useEffect(() => {
@@ -122,10 +153,7 @@ export function RconTerminal({ role }: Props) {
     setInput("");
     // Optimistic echo — the WS broadcast will replay for other admins
     // but our own send completes via HTTP first.
-    setOutput((o) => [
-      ...o,
-      { kind: "user", text: `> ${cmd}`, ts: Date.now() },
-    ]);
+    setOutput((o) => [...o, { kind: "user", text: `> ${cmd}`, ts: Date.now() }]);
     setPending(true);
     try {
       const res = await fetch("/api/rcon/execute", {
@@ -204,7 +232,7 @@ export function RconTerminal({ role }: Props) {
       const partial = input.trim();
       if (!partial) return;
       const match = RCON_COMMANDS.find(
-        (c) => c.name.startsWith(partial) && atLeast(role, c.requires)
+        (c) => c.name.startsWith(partial) && atLeast(role, c.requires),
       );
       if (match) setInput(match.signature);
     }
@@ -213,6 +241,10 @@ export function RconTerminal({ role }: Props) {
   const visible = filter
     ? output.filter((l) => l.text.toLowerCase().includes(filter.toLowerCase()))
     : output;
+
+  // Live param hint: show signature for the command currently being typed.
+  const head = input.trim().split(/\s+/)[0] ?? "";
+  const headSpec = head ? findCommand(head) : undefined;
 
   return (
     <div className="flex flex-col gap-3">
@@ -261,7 +293,7 @@ export function RconTerminal({ role }: Props) {
             placeholder={
               pending
                 ? "sending..."
-                : "type a command — e.g. players, chopper, save, servermsg \"hi\"..."
+                : 'type a command — e.g. players, chopper, save, servermsg "hi"...'
             }
             disabled={pending}
             autoFocus
@@ -272,7 +304,19 @@ export function RconTerminal({ role }: Props) {
             <kbd className="pz-kbd">Enter</kbd>
           </div>
         </div>
+        {headSpec && (
+          <div
+            className="pz-mono text-[10.5px] text-pz-muted px-3 py-1 border-t border-pz-border-lo bg-pz-bg-1"
+            aria-live="polite"
+          >
+            <span className="text-pz-primary">{headSpec.name}</span>
+            <span className="text-pz-text-dim"> · </span>
+            <span>{headSpec.signature}</span>
+            <span className="text-pz-text-dim"> · </span>
+            <span className="uppercase">requires {headSpec.requires}+</span>
+          </div>
+        )}
       </div>
     </div>
   );
-}
+});

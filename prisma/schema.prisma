@@ -35,31 +35,33 @@ model User {
 }
 
 model Player {
-  id            String    @id @default(cuid())
-  steamId       String    @unique
-  name          String
-  firstSeen     DateTime  @default(now())
-  lastSeen      DateTime  @default(now())
-  totalPlaytime Int       @default(0)
-  deaths        Int       @default(0)
-  isWhitelisted Boolean   @default(false)
-  isBanned      Boolean   @default(false)
-  banReason     String?
-  banExpiresAt  DateTime?
-  banByUserId   String?
-  ipLastSeen    String?
-  countryLast   String?
-  notes         String?
-  lastX         Float?
-  lastY         Float?
-  lastZ         Float?
-  lastRegion    String?
-  lastHealth    Float?
-  lastHunger    Float?
-  lastFatigue   Float?
-  isOnline      Boolean   @default(false)
-  inGameDay     Int?
-  perks         Json?
+  id              String    @id @default(cuid())
+  steamId         String    @unique
+  name            String
+  firstSeen       DateTime  @default(now())
+  lastSeen        DateTime  @default(now())
+  totalPlaytime   Int       @default(0)
+  deaths          Int       @default(0)
+  isWhitelisted   Boolean   @default(false)
+  whitelistedAt   DateTime?
+  whitelistedById String?
+  isBanned        Boolean   @default(false)
+  banReason       String?
+  banExpiresAt    DateTime?
+  banByUserId     String?
+  ipLastSeen      String?
+  countryLast     String?
+  notes           String?
+  lastX           Float?
+  lastY           Float?
+  lastZ           Float?
+  lastRegion      String?
+  lastHealth      Float?
+  lastHunger      Float?
+  lastFatigue     Float?
+  isOnline        Boolean   @default(false)
+  inGameDay       Int?
+  perks           Json?
 
   events PlayerEvent[]
 }
