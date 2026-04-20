@@ -41,5 +41,11 @@
     "prettier": "3.4.2",
     "vitest": "2.1.8",
     "tsx": "4.19.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "@tailwindcss/node": "4.0.0",
+      "@tailwindcss/oxide": "4.0.0"
+    }
   }
 }
