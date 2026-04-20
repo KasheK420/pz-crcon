@@ -92,3 +92,65 @@ jobs:
           NODE_ENV: test
       - name: Build
         run: pnpm build
+
+  docker-proxy-smoke:
+    # Opt-in: manual trigger only, so the default PR run isn't blocked
+    # on docker-in-docker setup. Enable via Actions → "CI" → "Run workflow".
+    name: docker-socket-proxy endpoint matrix
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      APP_URL: http://localhost:3000
+      NEXTAUTH_SECRET: "0123456789abcdef0123456789abcdef0"
+      DATABASE_URL: postgresql://x:y@localhost:5432/z
+      DISCORD_CLIENT_ID: ci
+      DISCORD_CLIENT_SECRET: ci
+      DISCORD_ADMIN_IDS: "286560250578862080"
+      RCON_HOST: 127.0.0.1
+      RCON_PORT: "27015"
+      RCON_PASSWORD: ci
+      WEBHOOK_HMAC_SECRET: "0123456789abcdef0123456789abcdef0"
+      DOCKER_IN_DOCKER: "1"
+      DOCKER_PROXY_TEST_URL: http://localhost:2375
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm db:generate
+      - name: Pull proxy image
+        run: docker pull tecnativa/docker-socket-proxy:latest
+      - name: Start docker-socket-proxy
+        run: |
+          docker run -d --name proxy \
+            -p 2375:2375 \
+            -v /var/run/docker.sock:/var/run/docker.sock:ro \
+            -e CONTAINERS=1 \
+            -e POST=1 \
+            -e CONTAINERS_START=1 \
+            -e CONTAINERS_STOP=1 \
+            -e CONTAINERS_RESTART=1 \
+            -e CONTAINERS_KILL=1 \
+            tecnativa/docker-socket-proxy:latest
+      - name: Wait for proxy readiness
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:2375/_ping >/dev/null 2>&1; then
+              echo "proxy ready"; exit 0
+            fi
+            sleep 1
+          done
+          echo "proxy never came up"; docker logs proxy; exit 1
+      - name: Pull alpine test image
+        run: docker pull alpine:3.19
+      - name: Run docker-proxy smoke test
+        run: pnpm vitest run tests/integration/docker-proxy.endpoints.test.ts
+      - name: Proxy logs (on failure)
+        if: failure()
+        run: docker logs proxy
