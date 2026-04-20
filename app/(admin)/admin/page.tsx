@@ -1,10 +1,12 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
+import { atLeast } from "@/lib/auth/role";
 import { StatusCards } from "@/components/overview/status-cards";
 import { ActivityFeed } from "@/components/overview/activity-feed";
 import { QuickActions } from "@/components/overview/quick-actions";
 import { PlayersTable } from "@/components/players/table";
 import { JoinInfo } from "@/components/public/join-info";
+import { AuditCard } from "@/components/audit/audit-card";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +35,8 @@ export default async function OverviewPage() {
           <JoinInfo address={serverAddress} discordUrl={discordUrl} />
         </div>
       </div>
+
+      {atLeast(session.role, "MODERATOR") && <AuditCard />}
     </div>
   );
 }
