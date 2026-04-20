@@ -46,18 +46,19 @@ function emitLine(raw: string): void {
 async function startTail(): Promise<void> {
   if (active) return;
   log().info({ container: PZ_SERVER_NAME }, "starting docker logs tail");
-  const handle = await tailContainerLogs(PZ_SERVER_NAME, { tail: 200 });
-  if (!handle) {
-    log().warn(
-      { container: PZ_SERVER_NAME },
-      "could not attach to container logs (not found / docker socket missing)"
-    );
-    publish("logs:server", {
-      line: `[pz-crcon] container "${PZ_SERVER_NAME}" not found or Docker socket unavailable`,
-      ts: Date.now(),
-    });
+  const res = await tailContainerLogs(PZ_SERVER_NAME, { tail: 200 });
+  if (!res.ok) {
+    const diag =
+      res.reason === "socket"
+        ? `[pz-crcon] Docker socket unavailable — cannot tail "${PZ_SERVER_NAME}" (${res.detail})`
+        : res.reason === "container"
+          ? `[pz-crcon] container "${PZ_SERVER_NAME}" unreachable — ${res.detail}`
+          : `[pz-crcon] could not attach to "${PZ_SERVER_NAME}" logs — ${res.detail}`;
+    log().warn({ container: PZ_SERVER_NAME, reason: res.reason, detail: res.detail }, diag);
+    publish("logs:server", { line: diag, ts: Date.now() });
     return;
   }
+  const handle = res.handle;
   active = handle;
   buffered = "";
 
