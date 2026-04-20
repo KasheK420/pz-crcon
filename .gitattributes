@@ -1,0 +1,17 @@
+# Default: let git pick, but normalize on commit
+* text=auto eol=lf
+
+# Always-LF — these run on Linux containers
+*.sh    text eol=lf
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.ico   binary
+*.gif   binary
+*.webp  binary

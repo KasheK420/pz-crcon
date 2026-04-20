@@ -1,0 +1,29 @@
+# Production compose for HomePL VPS.
+# Deploy to: /opt/docker/pz-crcon/docker-compose.yml
+# Requires: proxy-net + db-net (created by /opt/docker/infrastructure)
+# Requires: /opt/docker/pz-crcon/.env (production secrets, see docs/deployment.md)
+
+services:
+  pz-crcon:
+    image: majorluk/pz-crcon:latest
+    container_name: pz-crcon
+    restart: unless-stopped
+    networks:
+      - proxy-net
+      - db-net
+    env_file:
+      - .env
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+networks:
+  proxy-net:
+    external: true
+  db-net:
+    external: true
