@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { signOut } from "@/auth";
 import type { SessionInfo } from "@/lib/auth/session";
 
@@ -25,9 +26,9 @@ export function Topbar({
             </button>
           </form>
         ) : (
-          <a href="/api/auth/signin/discord" className="topbar-login">
+          <Link href="/api/auth/signin/discord" className="topbar-login">
             Sign in
-          </a>
+          </Link>
         )}
       </div>
     </header>
