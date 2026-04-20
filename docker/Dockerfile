@@ -43,12 +43,10 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 RUN pnpm add tsx@4.19.2
 
-# Copy built Next.js standalone bundle + static + public + Prisma client + server entry + libs
+# Copy built Next.js standalone bundle + static + Prisma + server entry + libs
+# Next standalone output already traces Prisma client into node_modules/
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/lib ./lib
