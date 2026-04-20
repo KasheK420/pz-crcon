@@ -2,6 +2,8 @@
 
 # --- Builder ---
 FROM node:22-alpine AS builder
+# Prisma needs OpenSSL on Alpine (defaults to looking for libssl 1.1.x)
+RUN apk add --no-cache openssl libc6-compat
 RUN corepack enable
 WORKDIR /app
 
@@ -12,11 +14,25 @@ RUN pnpm install --frozen-lockfile
 # Copy source and build
 COPY . .
 RUN pnpm db:generate
+
+# Next.js evaluates env at build time when route handlers import lib/env.ts.
+# These dummy values satisfy validation; runtime uses real values from .env.
+ENV NODE_ENV=production \
+    APP_URL=http://localhost:3000 \
+    NEXTAUTH_SECRET=build0123456789abcdef0123456789abcdef \
+    DATABASE_URL=postgresql://x:y@localhost:5432/z \
+    DISCORD_CLIENT_ID=build \
+    DISCORD_CLIENT_SECRET=build \
+    DISCORD_ADMIN_IDS=0 \
+    RCON_HOST=127.0.0.1 \
+    RCON_PORT=27015 \
+    RCON_PASSWORD=build \
+    WEBHOOK_HMAC_SECRET=build0123456789abcdef0123456789abcdef
 RUN pnpm build
 
 # --- Runtime ---
 FROM node:22-alpine AS runtime
-RUN corepack enable && apk add --no-cache curl
+RUN apk add --no-cache curl openssl libc6-compat && corepack enable
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
