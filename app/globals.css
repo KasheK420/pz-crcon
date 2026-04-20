@@ -526,3 +526,366 @@
   font-size: 11px;
   padding: 2px 4px;
 }
+
+/* ============================================================
+   Chunk 4: Panels, terminal, tables, stat cards
+   ============================================================ */
+
+/* --- Generic panel --- */
+.pz-panel {
+  background: var(--color-pz-bg-1, #111410);
+  border: 1px solid var(--color-pz-border-lo, #2a2e24);
+  border-radius: var(--pz-radius, 3px);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pz-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-pz-border-lo, #2a2e24);
+  background: var(--color-pz-bg-1, #111410);
+}
+.pz-panel-title {
+  font-family: "Oswald", sans-serif;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-pz-text);
+}
+.pz-panel-sub {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--color-pz-muted);
+  text-transform: uppercase;
+}
+.pz-panel-body {
+  padding: 14px;
+  min-width: 0;
+}
+.pz-panel-body.dense {
+  padding: 0;
+}
+
+.pz-label {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-pz-muted);
+}
+
+/* --- Stat card --- */
+.pz-stat {
+  background: var(--color-pz-bg-1, #111410);
+  border: 1px solid var(--color-pz-border-lo, #2a2e24);
+  border-radius: var(--pz-radius, 3px);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.pz-stat .v {
+  font-family: "Oswald", sans-serif;
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--color-pz-text);
+  letter-spacing: 0.02em;
+}
+.pz-stat .v .unit {
+  font-size: 12px;
+  color: var(--color-pz-muted);
+  margin-left: 4px;
+  font-weight: 400;
+}
+.pz-stat .foot {
+  font-size: 11px;
+  color: var(--color-pz-muted);
+}
+.pz-stat.warn .v {
+  color: var(--color-pz-accent);
+}
+.pz-stat.danger .v {
+  color: var(--color-pz-danger);
+}
+.pz-stat.ok .v {
+  color: var(--color-pz-primary);
+}
+
+/* --- Hero --- */
+.pz-hero {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-pz-bg-1, #111410);
+  border: 1px solid var(--color-pz-border-lo, #2a2e24);
+  border-radius: var(--pz-radius, 3px);
+}
+.pz-hero-body {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 20px;
+  padding: 18px 22px 16px;
+}
+.pz-hero-title {
+  font-family: "Oswald", sans-serif;
+  font-weight: 600;
+  font-size: 36px;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-pz-text);
+  margin-top: 4px;
+}
+.pz-hero-title .accent {
+  color: var(--color-pz-primary);
+}
+.pz-hero-stats {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+}
+.pz-hero-stat {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 100px;
+}
+.pz-hero-stat .big {
+  font-family: "Oswald", sans-serif;
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--color-pz-text);
+}
+.pz-hero-stat .big .dim {
+  color: var(--color-pz-muted);
+}
+.pz-hero-stat .small {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  color: var(--color-pz-text);
+}
+.pz-sep-v {
+  width: 1px;
+  background: var(--color-pz-border-lo);
+  opacity: 0.7;
+}
+
+/* --- Terminal --- */
+.pz-terminal {
+  background: var(--color-pz-bg-deep, #07080a);
+  border: 1px solid var(--color-pz-border-lo, #2a2e24);
+  border-radius: var(--pz-radius, 3px);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12.5px;
+  color: var(--color-pz-text-dim);
+  display: flex;
+  flex-direction: column;
+  min-height: 440px;
+}
+.pz-terminal-output {
+  flex: 1;
+  padding: 12px 14px;
+  overflow-y: auto;
+  max-height: 540px;
+}
+.pz-terminal-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 1px 0;
+}
+.pz-terminal-line.user {
+  color: var(--color-pz-primary);
+}
+.pz-terminal-line.ok {
+  color: var(--color-pz-primary);
+}
+.pz-terminal-line.info {
+  color: var(--color-pz-text-dim);
+}
+.pz-terminal-line.warn {
+  color: var(--color-pz-accent);
+}
+.pz-terminal-line.error {
+  color: var(--color-pz-danger);
+}
+.pz-terminal-prompt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--color-pz-border-lo);
+  background: var(--color-pz-bg-1, #111410);
+}
+.pz-terminal-prompt .sigil {
+  color: var(--color-pz-primary);
+  font-weight: 600;
+}
+.pz-terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--color-pz-text);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12.5px;
+  outline: none;
+  padding: 0;
+}
+.pz-kbd {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9.5px;
+  padding: 2px 5px;
+  border: 1px solid var(--color-pz-border-lo);
+  border-radius: 2px;
+  color: var(--color-pz-muted);
+  background: var(--color-pz-bg-0);
+}
+
+/* --- Live dot / badge / pill --- */
+.pz-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--color-pz-border-lo);
+  background: var(--color-pz-bg-1);
+  color: var(--color-pz-text-dim);
+  border-radius: var(--pz-radius, 3px);
+}
+.pz-pill.live {
+  color: var(--color-pz-primary);
+  border-color: var(--color-pz-primary-dim);
+}
+.pz-pill.warn {
+  color: var(--color-pz-accent);
+  border-color: var(--color-pz-accent-dim);
+}
+.pz-pill.down {
+  color: var(--color-pz-danger);
+  border-color: var(--color-pz-danger-dim);
+}
+
+.pz-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--color-pz-bg-2);
+  border: 1px solid var(--color-pz-border-lo);
+  color: var(--color-pz-text-dim);
+  border-radius: 2px;
+}
+.pz-badge.green {
+  color: var(--color-pz-primary);
+  border-color: var(--color-pz-primary-dim);
+}
+.pz-badge.red {
+  color: var(--color-pz-danger);
+  border-color: var(--color-pz-danger-dim);
+}
+.pz-badge.amber {
+  color: var(--color-pz-accent);
+  border-color: var(--color-pz-accent-dim);
+}
+
+/* --- Table --- */
+.pz-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.pz-table thead th {
+  text-align: left;
+  padding: 10px 14px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-pz-muted);
+  background: var(--color-pz-bg-1);
+  border-bottom: 1px solid var(--color-pz-border-lo);
+  font-weight: 500;
+}
+.pz-table tbody td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-pz-border-lo);
+  color: var(--color-pz-text-dim);
+  vertical-align: middle;
+}
+.pz-table tbody tr:hover td {
+  background: var(--color-pz-bg-1);
+  color: var(--color-pz-text);
+}
+
+/* --- Tactical map --- */
+.pz-map {
+  width: 100%;
+  height: 100%;
+  background: var(--color-pz-bg-deep);
+  border: 1px solid var(--color-pz-border-lo);
+  border-radius: var(--pz-radius, 3px);
+  display: block;
+}
+
+/* --- Mod grid --- */
+.pz-mod-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--color-pz-bg-2);
+  border: 1px solid var(--color-pz-border-lo);
+  border-radius: 2px;
+  min-width: 0;
+}
+.pz-mod-abbr {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  background: var(--color-pz-bg-3);
+  font-family: "Oswald", sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  color: var(--color-pz-text-dim);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.pz-mod-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-pz-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.pz-mod-ver {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--color-pz-muted);
+}
+
+/* --- Utility helpers --- */
+.pz-mono {
+  font-family: "JetBrains Mono", monospace;
+}
+.pz-display-h {
+  font-family: "Oswald", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
