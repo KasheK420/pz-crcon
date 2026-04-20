@@ -35,10 +35,28 @@ export const NAV: NavGroup[] = [
         minRole: "VIEWER",
       },
       {
+        id: "whitelist",
+        label: "Whitelist",
+        href: "/admin/whitelist",
+        minRole: "ADMIN",
+      },
+      {
         id: "logs",
         label: "Server Logs",
         href: "/admin/logs",
         minRole: "MODERATOR",
+      },
+      {
+        id: "config",
+        label: "Server Config",
+        href: "/admin/config",
+        minRole: "VIEWER",
+      },
+      {
+        id: "startup",
+        label: "Startup Config",
+        href: "/admin/startup",
+        minRole: "OWNER",
       },
     ],
   },

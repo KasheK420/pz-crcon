@@ -74,9 +74,7 @@ function computeMemUsed(s: DockerStats): number {
  * Fetch a single non-streaming snapshot of a container's stats.
  * Returns `null` if the container does not exist or is not running.
  */
-export async function getContainerStats(
-  containerName: string
-): Promise<ContainerStats | null> {
+export async function getContainerStats(containerName: string): Promise<ContainerStats | null> {
   const docker = getDocker();
   let container;
   try {
@@ -115,6 +113,117 @@ export async function getContainerStats(
 }
 
 /**
+ * Inspect a container and return the raw dockerode payload (or null
+ * if the container does not exist). Used by the startup-config page
+ * and the config reader to discover the SERVERNAME env var.
+ */
+export interface ContainerInspect {
+  Id: string;
+  Name: string;
+  State?: { Running?: boolean; Status?: string; StartedAt?: string };
+  Config?: {
+    Image?: string;
+    Env?: string[];
+    Cmd?: string[];
+    Entrypoint?: string[] | null;
+    WorkingDir?: string;
+    Labels?: Record<string, string>;
+  };
+  HostConfig?: {
+    Binds?: string[];
+    PortBindings?: Record<string, unknown>;
+    RestartPolicy?: { Name?: string };
+  };
+  NetworkSettings?: {
+    Networks?: Record<string, { IPAddress?: string }>;
+  };
+}
+
+export async function inspectContainer(containerName: string): Promise<ContainerInspect | null> {
+  const docker = getDocker();
+  try {
+    const c = docker.getContainer(containerName);
+    const info = (await c.inspect()) as unknown as ContainerInspect;
+    return info;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read the env-var map from a container by parsing `Config.Env` (which
+ * is delivered as `KEY=value` strings).
+ */
+export function envMapFrom(info: ContainerInspect): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const entry of info.Config?.Env ?? []) {
+    const eq = entry.indexOf("=");
+    if (eq <= 0) continue;
+    out[entry.slice(0, eq)] = entry.slice(eq + 1);
+  }
+  return out;
+}
+
+/**
+ * Read a file from inside a running container by spawning a one-shot
+ * `cat <path>` via the Docker exec API. Returns the file contents as a
+ * UTF-8 string, or null if the container does not exist or the read failed.
+ *
+ * Note: this uses dockerode's container.exec API (Docker daemon RPC),
+ * NOT Node's child_process module — there is no shell involved.
+ */
+export async function readContainerFile(
+  containerName: string,
+  filePath: string,
+): Promise<string | null> {
+  const docker = getDocker();
+  try {
+    const container = docker.getContainer(containerName);
+    const session = await container.exec({
+      Cmd: ["cat", filePath],
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: false,
+    });
+    const stream = (await session.start({ hijack: true, stdin: false })) as
+      | NodeJS.ReadableStream
+      | (NodeJS.ReadableStream & { setEncoding: (e: string) => void });
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream as AsyncIterable<Buffer | string>) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const raw = Buffer.concat(chunks);
+
+    // For non-TTY exec, dockerode returns a stream of multiplexed frames.
+    // Each frame is 8 bytes: [stream_type, 0,0,0, size_be_4]. We strip
+    // those headers and concat the payloads.
+    const out: Buffer[] = [];
+    let i = 0;
+    while (i + 8 <= raw.length) {
+      const type = raw[i];
+      // Bail to "raw mode" if header doesn't look like the std multiplex
+      // sentinel (stream type is 0,1,2 — 1=stdout, 2=stderr).
+      if (type !== 0 && type !== 1 && type !== 2) {
+        return raw.toString("utf8");
+      }
+      const size = raw.readUInt32BE(i + 4);
+      const start = i + 8;
+      const end = start + size;
+      if (end > raw.length) break;
+      // We accept stdout (1) and stderr (2) — most tools write to stdout.
+      if (type === 1 || type === 2) {
+        out.push(raw.subarray(start, end));
+      }
+      i = end;
+    }
+    return Buffer.concat(out).toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Stream raw log lines from a container's stdout/stderr, starting from
  * the tail. Returns the dockerode log stream and a closer.
  *
@@ -125,7 +234,7 @@ export async function getContainerStats(
  */
 export async function tailContainerLogs(
   containerName: string,
-  opts: { tail?: number } = {}
+  opts: { tail?: number } = {},
 ): Promise<{ stream: NodeJS.ReadableStream; close: () => void } | null> {
   const docker = getDocker();
   try {
