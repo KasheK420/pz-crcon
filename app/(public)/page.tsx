@@ -27,7 +27,13 @@ async function loadStatus() {
   }
   const mods = await prisma.mod.findMany({
     where: { enabled: true },
-    select: { workshopId: true, modId: true, name: true, version: true },
+    select: {
+      workshopId: true,
+      modId: true,
+      name: true,
+      version: true,
+      thumbnailUrl: true,
+    },
     orderBy: { loadOrder: "asc" },
   });
   return {
