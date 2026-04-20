@@ -322,10 +322,30 @@ export function SandboxTab({ role }: Props) {
 
       <RestartPromptModal
         open={restartOpen}
-        canRestart={false}
-        onRestart={() => setRestartOpen(false)}
+        canRestart={true}
+        onRestart={async () => {
+          setRestartOpen(false);
+          try {
+            const res = await csrfFetch("/api/admin/server/restart", {
+              method: "POST",
+            });
+            const j = (await res.json().catch(() => ({}))) as {
+              code?: string;
+            };
+            const { toast } = await import("sonner");
+            if (res.ok) toast.success("Restart started. Watch the phase badge.");
+            else if (j.code === "lifecycle-busy")
+              toast.error("Lifecycle busy — another operation is in progress.");
+            else if (j.code === "proxy-unreachable")
+              toast.error("Proxy unreachable — check docker-socket-proxy.");
+            else toast.error(`Restart failed (${res.status})`);
+          } catch (e) {
+            const { toast } = await import("sonner");
+            toast.error(`Restart failed: ${String(e)}`);
+          }
+        }}
         onLater={() => setRestartOpen(false)}
-        reason="All sandbox variables require a PZ server restart to take effect. Lifecycle controls land in Chunk 5 — for now, restart via SSH."
+        reason="All sandbox variables require a PZ server restart to take effect."
       />
     </>
   );

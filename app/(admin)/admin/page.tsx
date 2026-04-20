@@ -7,6 +7,7 @@ import { QuickActions } from "@/components/overview/quick-actions";
 import { PlayersTable } from "@/components/players/table";
 import { JoinInfo } from "@/components/public/join-info";
 import { AuditCard } from "@/components/audit/audit-card";
+import { ServerControlsCard } from "@/components/server/server-controls-card";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,12 @@ export default async function OverviewPage() {
     <div className="flex flex-col gap-4">
       <StatusCards />
 
-      <QuickActions role={session.role} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <QuickActions role={session.role} />
+        {atLeast(session.role, "ADMIN") && (
+          <ServerControlsCard role={session.role} />
+        )}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-4">
         <PlayersTable

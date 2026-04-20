@@ -4,10 +4,12 @@
  * Prompts the operator to restart the server after a config write that
  * touched a restart-gated key.
  *
- * Phase 1.7 Chunk 4: the "Restart now" primary button is rendered but
- * disabled, with a tooltip explaining why. Chunk 5 lands the lifecycle
- * module and flips `canRestart` on. Until then, operators restart via
- * SSH — the "Later" button just dismisses the prompt.
+ * As of Chunk 5, the "Restart now" primary button is wired into the
+ * lifecycle orchestrator — call sites pass `canRestart={true}` and provide
+ * an `onRestart` handler that POSTs `/api/admin/server/restart`.
+ *
+ * If a caller still passes `canRestart={false}` (e.g. a non-ADMIN viewing
+ * a descriptor diff), the button renders disabled with a tooltip.
  */
 
 import {
@@ -86,7 +88,7 @@ export function RestartPromptModal({
                   }
                 />
                 <TooltipContent>
-                  Lifecycle ships in Phase 1.7 Chunk 5
+                  Restart is ADMIN+ only
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
