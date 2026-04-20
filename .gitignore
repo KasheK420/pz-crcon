@@ -22,6 +22,8 @@ node_modules/
 .pnp.*
 .yarn/
 .next/
+next-env.d.ts
+*.tsbuildinfo
 out/
 .nuxt/
 dist/
