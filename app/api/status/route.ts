@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
-import { rconExecute } from "@/lib/rcon/client";
+import { rconExecute, getFirstConnectAt } from "@/lib/rcon/client";
 import { parsePlayersOutput } from "@/lib/rcon/parsers";
 import { prisma } from "@/lib/db/client";
+import { getLastTps } from "@/lib/ws/log-streamer";
 
 let cache: { at: number; data: unknown } | null = null;
 const TTL_MS = 10_000;
 
-// Approximate uptime: seconds since this Node process started.
+// Fallback uptime: seconds since this Node process started.
+// Preferred: seconds since first successful RCON connect (set by
+// rcon/client.ts), which more closely tracks the PZ server itself.
 const PROCESS_STARTED_AT = Date.now();
 
 export async function GET() {
@@ -27,12 +30,18 @@ export async function GET() {
     select: { workshopId: true, modId: true, name: true, version: true },
     orderBy: { loadOrder: "asc" },
   });
+  const firstConnectAt = getFirstConnectAt();
+  const uptimeSec = Math.floor(
+    (Date.now() - (firstConnectAt ?? PROCESS_STARTED_AT)) / 1000
+  );
   const data = {
     online,
     serverName: process.env.PUBLIC_SERVER_NAME ?? "MajorlukPZ",
     players: { count: players.count, names: players.names },
     mods,
-    uptimeSec: Math.floor((Date.now() - PROCESS_STARTED_AT) / 1000),
+    uptimeSec,
+    uptimeSource: firstConnectAt ? "rcon-connect" : "process-start",
+    tps: getLastTps(),
     ts: Date.now(),
   };
   cache = { at: Date.now(), data };

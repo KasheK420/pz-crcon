@@ -13,6 +13,13 @@ services:
       - db-net
     env_file:
       - .env
+    # Read-only Docker socket mount: required for /api/admin/host-stats
+    # (container memory + CPU stats) and the /admin/logs viewer (live
+    # `docker logs -f pz-server` stream). See SECURITY.md for the threat
+    # model and why read-only is sufficient — we never call mutating
+    # endpoints, but mount-time `:ro` is a belt-and-braces guard.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:

@@ -39,5 +39,6 @@ function titleFor(path: string): string {
   if (path === "/admin") return "Overview";
   if (path === "/admin/rcon") return "RCON Terminal";
   if (path === "/admin/players") return "Players";
+  if (path === "/admin/logs") return "Server Logs";
   return "Admin";
 }

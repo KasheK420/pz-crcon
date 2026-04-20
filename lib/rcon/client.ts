@@ -6,6 +6,17 @@ const log = () => getLogger().child({ mod: "rcon" });
 
 let _rcon: Rcon | null = null;
 let _connecting: Promise<Rcon> | null = null;
+let _firstConnectAt: number | null = null;
+
+/**
+ * Timestamp of the first successful RCON connect since the process started,
+ * in ms. Used to surface "server uptime" more honestly than process-start
+ * (the Node container can boot before the PZ server is ready to accept
+ * connections). Returns null if we've never connected.
+ */
+export function getFirstConnectAt(): number | null {
+  return _firstConnectAt;
+}
 
 async function connect(): Promise<Rcon> {
   if (_rcon) return _rcon;
@@ -20,6 +31,7 @@ async function connect(): Promise<Rcon> {
         timeout: 5000,
       });
       await r.connect();
+      if (_firstConnectAt === null) _firstConnectAt = Date.now();
       log().info({ host: env.RCON_HOST, port: env.RCON_PORT }, "rcon connected");
       r.on("end", () => {
         log().warn("rcon connection ended; will reconnect on next command");

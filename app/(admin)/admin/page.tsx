@@ -4,12 +4,17 @@ import { StatusCards } from "@/components/overview/status-cards";
 import { ActivityFeed } from "@/components/overview/activity-feed";
 import { QuickActions } from "@/components/overview/quick-actions";
 import { PlayersTable } from "@/components/players/table";
+import { JoinInfo } from "@/components/public/join-info";
 
 export const dynamic = "force-dynamic";
 
 export default async function OverviewPage() {
   const session = await getSession();
   if (!session) redirect("/api/auth/signin/discord");
+
+  const serverAddress =
+    process.env.PUBLIC_SERVER_ADDRESS ?? "pz.majorluk.pl:16261";
+  const discordUrl = process.env.PUBLIC_DISCORD_URL ?? undefined;
 
   return (
     <div className="flex flex-col gap-4">
@@ -23,7 +28,10 @@ export default async function OverviewPage() {
           onlineOnly
           title="Online Players"
         />
-        <ActivityFeed />
+        <div className="flex flex-col gap-4">
+          <ActivityFeed />
+          <JoinInfo address={serverAddress} discordUrl={discordUrl} />
+        </div>
       </div>
     </div>
   );

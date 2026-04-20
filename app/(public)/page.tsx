@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db/client";
 import { rconExecute } from "@/lib/rcon/client";
 import { parsePlayersOutput } from "@/lib/rcon/parsers";
 import { ServerStatusCard } from "@/components/public/server-status-card";
-import { RealPzMap } from "@/components/map/real-pz-map";
+import KnoxMapDynamic from "@/components/map/knox-map-dynamic";
 import { ModGrid } from "@/components/public/mod-grid";
 import { JoinInfo } from "@/components/public/join-info";
 import { Panel } from "@/components/pz/panel";
@@ -65,13 +65,13 @@ export default async function PublicMapPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
         <Panel
           title="Knox County · Live"
-          sub="REAL PZ MAP · LIVE POSITIONS IN PHASE 4"
+          sub="LEAFLET TILES · RCON PLAYER MARKERS"
           right={<LiveDot variant={status.online ? "live" : "down"} label={status.online ? "LIVE" : "OFFLINE"} />}
           dense
           bodyClassName="p-0"
         >
           <div style={{ height: 540 }}>
-            <RealPzMap />
+            <KnoxMapDynamic />
           </div>
         </Panel>
 
