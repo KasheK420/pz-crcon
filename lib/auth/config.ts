@@ -2,7 +2,7 @@ import type { NextAuthConfig } from "next-auth";
 import Discord from "next-auth/providers/discord";
 import { prisma } from "@/lib/db/client";
 import { loadEnv } from "@/lib/env";
-import { checkGuildMembership } from "@/lib/auth/discord";
+import { resolveRoleForDiscordId } from "@/lib/auth/discord";
 import { getSessionCookieName } from "@/lib/auth/cookie-name";
 import type { Role } from "@/lib/auth/role";
 import { getLogger } from "@/lib/logger";
@@ -39,28 +39,25 @@ export function buildAuthConfig(): NextAuthConfig {
       async signIn({ user, account }) {
         if (!account || !account.providerAccountId) return false;
         const discordId = account.providerAccountId;
-        const { inGuild, hasAdminRole } = await checkGuildMembership(discordId);
-        if (!inGuild) {
-          log().info({ discordId }, "rejected: not in guild");
+        const role = resolveRoleForDiscordId(discordId);
+        if (!role) {
+          log().info({ discordId }, "rejected: not in DISCORD_ADMIN_IDS");
           return false;
         }
 
-        // Bootstrap: first OWNER per env var; everyone else VIEWER
-        // unless promoted later (or has admin role at creation time).
         const existing = await prisma.user.findUnique({
           where: { discordId },
         });
         if (!existing) {
-          const isBootstrap = discordId === env.BOOTSTRAP_OWNER_DISCORD_ID;
           await prisma.user.create({
             data: {
               discordId,
               username: user.name ?? `discord:${discordId}`,
               avatar: user.image,
-              role: isBootstrap ? "OWNER" : hasAdminRole ? "ADMIN" : "VIEWER",
+              role,
             },
           });
-          log().info({ discordId, bootstrap: isBootstrap }, "user created");
+          log().info({ discordId, role }, "user created");
         } else {
           await prisma.user.update({
             where: { discordId },
@@ -91,7 +88,5 @@ export function buildAuthConfig(): NextAuthConfig {
         return session;
       },
     },
-    // No `pages.signIn` override - use Auth.js's built-in /api/auth/signin.
-    // Adding a custom /login page is a Phase 2 polish item.
   };
 }
