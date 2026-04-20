@@ -4,6 +4,13 @@ services:
     container_name: pz-crcon
     restart: unless-stopped
     user: "1000:1000"
+    # Supplementary group for access to /var/run/docker.sock. The socket on
+    # Ubuntu HomePL is root:docker with 660 perms; docker GID = 999 there.
+    # Without this the dockerode client gets EACCES on ping() and the
+    # log-streamer falls back to "Docker socket unavailable" diagnostic.
+    # Override via env `DOCKER_GID` if your host uses a different GID.
+    group_add:
+      - "${DOCKER_GID:-999}"
     networks: [proxy-net, db-net, pz-control-net]
     env_file: [.env]
     volumes:
