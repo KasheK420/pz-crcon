@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, stat, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,9 +8,10 @@ vi.mock("@/lib/pz/access-check", () => ({
   checkConfigAccess: async () => ({ ok: true, dir: "" }),
 }));
 
-const { writeServerIni } = await import("@/lib/pz/writer");
+const { writeServerIni, registerLifecyclePhaseGetter, __resetLifecyclePhaseGetterForTests } =
+  await import("@/lib/pz/writer");
 
-describe("writer mtime race", () => {
+describe("writer lifecycle gate", () => {
   let root: string;
   let serverDir: string;
   let iniPath: string;
@@ -23,33 +24,34 @@ describe("writer mtime race", () => {
     process.env.PZ_BACKUP_DIR = join(serverDir, ".backups");
     process.env.PZ_SERVER_PREFIX = "servertest";
     iniPath = join(serverDir, "servertest.ini");
+    await writeFile(iniPath, "MaxPlayers=8\n");
+    __resetLifecyclePhaseGetterForTests();
   });
 
   afterEach(async () => {
+    __resetLifecyclePhaseGetterForTests();
     await rm(root, { recursive: true, force: true });
     delete process.env.PZ_CONFIG_DIR;
     delete process.env.PZ_BACKUP_DIR;
     delete process.env.PZ_SERVER_PREFIX;
   });
 
-  it("rejects write when clientMtimeMs disagrees with disk mtime", async () => {
-    await writeFile(iniPath, "MaxPlayers=16\n");
+  it("rejects write when lifecycle phase is not 'idle'", async () => {
+    registerLifecyclePhaseGetter(() => "starting");
     const { mtimeMs } = await stat(iniPath);
-
-    // Simulate a stale client by providing a wildly wrong mtime.
-    const r = await writeServerIni({ MaxPlayers: 8 }, { clientMtimeMs: mtimeMs - 10_000 });
+    const r = await writeServerIni({ MaxPlayers: 9 }, { clientMtimeMs: mtimeMs });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe("mtime-race");
-
-    // File contents unchanged.
-    expect(await readFile(iniPath, "utf8")).toBe("MaxPlayers=16\n");
+    if (!r.ok) {
+      expect(r.code).toBe("lifecycle-busy");
+      expect(r.detail).toContain("starting");
+    }
+    expect(await readFile(iniPath, "utf8")).toBe("MaxPlayers=8\n");
   });
 
-  it("accepts exact matching mtime", async () => {
-    await writeFile(iniPath, "MaxPlayers=16\n");
+  it("permits write when phase returns to 'idle'", async () => {
+    registerLifecyclePhaseGetter(() => "idle");
     const { mtimeMs } = await stat(iniPath);
-    // Exact mtime passes the check trivially.
-    const r = await writeServerIni({ MaxPlayers: 8 }, { clientMtimeMs: mtimeMs });
+    const r = await writeServerIni({ MaxPlayers: 9 }, { clientMtimeMs: mtimeMs });
     expect(r.ok).toBe(true);
   });
 });
