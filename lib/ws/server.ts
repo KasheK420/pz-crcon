@@ -14,6 +14,41 @@ interface ClientState {
 
 const clients = new Map<WebSocket, ClientState>();
 
+type SubChangeListener = (channel: Channel, count: number) => void;
+const subListeners = new Set<SubChangeListener>();
+
+/**
+ * Subscribe to channel-subscriber-count changes. The callback fires
+ * whenever a client subscribes or unsubscribes (or drops while
+ * holding subs). `count` is the new subscriber count for the channel.
+ *
+ * Used by long-running stream backends (like the docker-logs tailer)
+ * to start work on the first subscriber and stop on the last.
+ */
+export function onSubscriberChange(fn: SubChangeListener): () => void {
+  subListeners.add(fn);
+  return () => subListeners.delete(fn);
+}
+
+function countSubs(channel: Channel): number {
+  let n = 0;
+  for (const state of clients.values()) {
+    if (state.subs.has(channel)) n++;
+  }
+  return n;
+}
+
+function notify(channel: Channel): void {
+  const c = countSubs(channel);
+  for (const fn of subListeners) {
+    try {
+      fn(channel, c);
+    } catch {
+      // listener errors must not break ws traffic
+    }
+  }
+}
+
 export function attachWs(httpServer: HttpServer): WebSocketServer {
   const env = loadEnv();
   const wss = new WebSocketServer({ noServer: true });
@@ -27,7 +62,15 @@ export function attachWs(httpServer: HttpServer): WebSocketServer {
       log().info({ role: identity?.role ?? "anon" }, "ws connected");
 
       ws.on("message", (raw) => onMessage(ws, raw.toString()));
-      ws.on("close", () => clients.delete(ws));
+      ws.on("close", () => {
+        const state = clients.get(ws);
+        clients.delete(ws);
+        // Re-notify any channels this client was subscribed to so that
+        // backends can shut down if subscriber count is now zero.
+        if (state) {
+          for (const ch of state.subs) notify(ch);
+        }
+      });
     });
   });
 
@@ -48,11 +91,14 @@ function onMessage(ws: WebSocket, raw: string): void {
       if (canSubscribe(msg.channel, state.identity?.role ?? null)) {
         state.subs.add(msg.channel);
         ws.send(JSON.stringify({ type: "subscribed", channel: msg.channel }));
+        notify(msg.channel);
       } else {
         ws.send(JSON.stringify({ type: "denied", channel: msg.channel }));
       }
     } else if (msg.type === "unsubscribe" && msg.channel) {
-      state.subs.delete(msg.channel);
+      if (state.subs.delete(msg.channel)) {
+        notify(msg.channel);
+      }
     }
   } catch (e) {
     log().warn({ err: e }, "bad ws message");

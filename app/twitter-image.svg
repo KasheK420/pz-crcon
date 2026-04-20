@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="PZ-CRCON · Knox County Admin Network">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#14180f"/>
+      <stop offset="100%" stop-color="#07080a"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(125,163,72,0.08)" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="majorgrid" width="200" height="200" patternUnits="userSpaceOnUse">
+      <path d="M 200 0 L 0 0 0 200" fill="none" stroke="rgba(125,163,72,0.16)" stroke-width="0.75"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <rect width="1200" height="630" fill="url(#majorgrid)"/>
+
+  <!-- Outer frame -->
+  <rect x="24" y="24" width="1152" height="582" fill="none" stroke="#7da348" stroke-width="2" opacity="0.75"/>
+  <rect x="36" y="36" width="1128" height="558" fill="none" stroke="#7da348" stroke-width="0.5" opacity="0.4"/>
+
+  <!-- Header tag -->
+  <text x="60" y="80" fill="#7da348" font-family="Oswald, sans-serif" font-size="22" letter-spacing="6">// CHANNEL: KNOX-COUNTY · OPERATOR: PZ-CRCON //</text>
+
+  <!-- Crosshair -->
+  <g transform="translate(280, 310)">
+    <circle r="170" fill="none" stroke="#7da348" stroke-width="3" opacity="0.55"/>
+    <circle r="110" fill="none" stroke="#7da348" stroke-width="2" opacity="0.35"/>
+    <circle r="50" fill="none" stroke="#7da348" stroke-width="1.4" opacity="0.25"/>
+    <line x1="0" y1="-200" x2="0" y2="-110" stroke="#7da348" stroke-width="3"/>
+    <line x1="0" y1="110" x2="0" y2="200" stroke="#7da348" stroke-width="3"/>
+    <line x1="-200" y1="0" x2="-110" y2="0" stroke="#7da348" stroke-width="3"/>
+    <line x1="110" y1="0" x2="200" y2="0" stroke="#7da348" stroke-width="3"/>
+    <circle r="9" fill="#d4a017"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="540" y="270" fill="#e7ecd4" font-family="Impact, Oswald, sans-serif" font-size="120" font-weight="bold" letter-spacing="8">PZ-CRCON</text>
+  <text x="540" y="320" fill="#7da348" font-family="Oswald, sans-serif" font-size="34" letter-spacing="6">KNOX COUNTY · ADMIN NETWORK</text>
+
+  <!-- Subhead -->
+  <text x="540" y="380" fill="#9a9a88" font-family="Oswald, sans-serif" font-size="22" letter-spacing="3">Project Zomboid server panel</text>
+  <text x="540" y="412" fill="#9a9a88" font-family="Oswald, sans-serif" font-size="22" letter-spacing="3">Live status · Workshop mods · RCON terminal</text>
+
+  <!-- Bottom strip -->
+  <line x1="60" y1="540" x2="1140" y2="540" stroke="rgba(125,163,72,0.4)"/>
+  <text x="60" y="575" fill="#7da348" font-family="Oswald, sans-serif" font-size="20" letter-spacing="4">EXCLUSION ZONE · B41 UNSTABLE · 53 MODS</text>
+  <text x="1140" y="575" fill="#9a9a88" font-family="Oswald, sans-serif" font-size="20" letter-spacing="4" text-anchor="end">pz.majorluk.pl</text>
+</svg>

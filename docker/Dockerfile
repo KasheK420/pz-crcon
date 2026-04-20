@@ -2,8 +2,12 @@
 
 # --- Builder ---
 FROM node:22-alpine AS builder
-# Prisma needs OpenSSL on Alpine (defaults to looking for libssl 1.1.x)
-RUN apk add --no-cache openssl libc6-compat
+# Prisma needs OpenSSL on Alpine (defaults to looking for libssl 1.1.x).
+# python3/make/g++ are kept around in case dockerode's optional ssh2
+# native bindings (cpu-features) need to compile from source — usually
+# the prebuilt binaries ship and these go unused, but the toolchain is
+# cheap to keep in the builder stage and avoids surprise CI failures.
+RUN apk add --no-cache openssl libc6-compat python3 make g++
 RUN corepack enable
 WORKDIR /app
 
@@ -32,7 +36,11 @@ RUN pnpm build
 
 # --- Runtime ---
 FROM node:22-alpine AS runtime
-RUN apk add --no-cache curl openssl libc6-compat && corepack enable
+# python3/make/g++ stay only long enough for `pnpm install` to (maybe)
+# rebuild native deps like dockerode's cpu-features; we drop them again
+# right after to keep the runtime image lean.
+RUN apk add --no-cache curl openssl libc6-compat python3 make g++ \
+    && corepack enable
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -42,6 +50,9 @@ ENV HOSTNAME=0.0.0.0
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 RUN pnpm add tsx@4.19.2
+
+# Strip native build toolchain — runtime no longer needs gcc/make/python.
+RUN apk del make g++ python3 || true
 
 # Copy built Next.js standalone bundle + static + Prisma + server entry + libs
 # Next standalone output already traces Prisma client into node_modules/

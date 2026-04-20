@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="PZ-CRCON">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#14180f"/>
+      <stop offset="100%" stop-color="#07080a"/>
+    </radialGradient>
+  </defs>
+  <rect width="180" height="180" fill="url(#bg)"/>
+  <rect x="4" y="4" width="172" height="172" fill="none" stroke="#7da348" stroke-width="3" opacity="0.7"/>
+  <circle cx="90" cy="90" r="50" fill="none" stroke="#7da348" stroke-width="3" opacity="0.6"/>
+  <circle cx="90" cy="90" r="30" fill="none" stroke="#7da348" stroke-width="2" opacity="0.35"/>
+  <line x1="90" y1="20" x2="90" y2="50" stroke="#7da348" stroke-width="3"/>
+  <line x1="90" y1="130" x2="90" y2="160" stroke="#7da348" stroke-width="3"/>
+  <line x1="20" y1="90" x2="50" y2="90" stroke="#7da348" stroke-width="3"/>
+  <line x1="130" y1="90" x2="160" y2="90" stroke="#7da348" stroke-width="3"/>
+  <circle cx="90" cy="90" r="6" fill="#d4a017"/>
+  <text x="90" y="103" font-family="Impact, Oswald, sans-serif" font-size="38" font-weight="bold"
+        text-anchor="middle" fill="#e7ecd4" letter-spacing="4" opacity="0.92">PZ</text>
+</svg>

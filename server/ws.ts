@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import next from "next";
 import { parse } from "node:url";
 import { attachWs } from "@/lib/ws/server";
+import { installLogStreamer } from "@/lib/ws/log-streamer";
 import { getLogger } from "@/lib/logger";
 
 const log = getLogger().child({ mod: "server" });
@@ -19,6 +20,7 @@ app
       handle(req, res, parsed);
     });
     attachWs(httpServer);
+    installLogStreamer();
     httpServer.listen(port, () => {
       log.info({ port }, "pz-crcon listening");
     });

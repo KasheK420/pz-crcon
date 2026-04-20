@@ -58,3 +58,40 @@ Users running `pz-crcon` in production should:
 - Review admin action logs periodically
 
 Deployment hardening docs will live in `docs/deployment/security.md`.
+
+## Sensitive mounts
+
+### `/var/run/docker.sock` (read-only)
+
+As of Phase 1.5, the production compose file mounts the host Docker socket
+into the `pz-crcon` container **read-only** (`:ro`). This is required for:
+
+- `/api/admin/host-stats` — reads `containers/<name>/stats` for `pz-server`
+  and `pz-crcon` to surface live memory + CPU on the admin overview.
+- `/admin/logs` — streams `docker logs -f pz-server` over WebSocket
+  (`logs:server` channel, MODERATOR+ role) into the admin log viewer.
+
+**Threat model:**
+- The Docker socket exposes the full Docker API, even when mounted `:ro`.
+  The `:ro` flag prevents the container from modifying the socket file
+  itself, but does **not** restrict the API operations that can be
+  performed against the daemon.
+- A compromised `pz-crcon` process could in principle list, inspect,
+  exec into, or stop other containers on the same Docker daemon.
+- We mitigate this by:
+  1. The application code only ever calls non-mutating endpoints
+     (`stats`, `logs`, `inspect`) via the `lib/docker/client.ts`
+     wrapper. There is no `start`, `stop`, `exec`, `commit`, `kill`,
+     or `remove` call anywhere in the codebase.
+  2. The container runs as a non-root user (`pzcrcon`) — the socket
+     must be readable by that user (`docker` group on the host).
+  3. The admin panel itself is gated by Discord OAuth + an explicit
+     `DISCORD_ADMIN_IDS` allowlist; no anonymous access.
+  4. The host firewall (UFW) only exposes 80/443 and 2222/SSH publicly;
+     the panel is reached via Cloudflare Tunnel, not a port-forward.
+
+**If you do not need host-stats or live logs**, you can safely remove the
+`/var/run/docker.sock:/var/run/docker.sock:ro` mount from
+`docker/docker-compose.deploy.yml`. The endpoints will return
+`{available: false}` and the log viewer will show "Docker socket
+unavailable", but the rest of the app will continue to work.

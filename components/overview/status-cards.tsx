@@ -8,6 +8,24 @@ interface Status {
   serverName: string;
   players: { count: number; names: string[] };
   uptimeSec: number;
+  uptimeSource: "rcon-connect" | "process-start";
+  tps: number | null;
+}
+
+interface ContainerStat {
+  name: string;
+  running: boolean;
+  memBytes: number;
+  memLimitBytes: number;
+  cpuPercent: number;
+  available: boolean;
+  reason?: string;
+}
+
+interface HostStats {
+  pzServer: ContainerStat;
+  pzCrcon: ContainerStat;
+  ts: number;
 }
 
 function formatUptime(sec: number): string {
@@ -16,6 +34,22 @@ function formatUptime(sec: number): string {
   const m = Math.floor((sec % 3600) / 60);
   if (d > 0) return `${d}d ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function formatBytes(b: number): string {
+  if (!b) return "0 MB";
+  const mb = b / 1_048_576;
+  if (mb < 1024) return `${mb.toFixed(0)} MB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
+}
+
+function memVariant(s: ContainerStat): "default" | "ok" | "warn" | "danger" {
+  if (!s.available || !s.running) return "default";
+  if (!s.memLimitBytes) return "default";
+  const pct = (s.memBytes / s.memLimitBytes) * 100;
+  if (pct > 90) return "danger";
+  if (pct > 75) return "warn";
+  return "ok";
 }
 
 function Sparkline({ data }: { data: number[] }) {
@@ -37,20 +71,67 @@ function Sparkline({ data }: { data: number[] }) {
   );
 }
 
+function ContainerCard({
+  label,
+  s,
+}: {
+  label: string;
+  s: ContainerStat | undefined;
+}) {
+  if (!s || !s.available) {
+    return (
+      <StatCard
+        label={label}
+        value="—"
+        foot={s?.reason ?? "docker socket unavailable"}
+      />
+    );
+  }
+  if (!s.running) {
+    return (
+      <StatCard label={label} value="STOPPED" foot={s.name} variant="danger" />
+    );
+  }
+  const memPct = s.memLimitBytes
+    ? Math.round((s.memBytes / s.memLimitBytes) * 100)
+    : 0;
+  return (
+    <StatCard
+      label={label}
+      value={formatBytes(s.memBytes)}
+      foot={
+        <span>
+          <span className="pz-mono">{s.cpuPercent.toFixed(1)}% CPU</span>
+          {s.memLimitBytes ? <span className="pz-mono"> · {memPct}% of {formatBytes(s.memLimitBytes)}</span> : null}
+        </span>
+      }
+      variant={memVariant(s)}
+    />
+  );
+}
+
 export function StatusCards() {
   const [status, setStatus] = useState<Status | null>(null);
+  const [hostStats, setHostStats] = useState<HostStats | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/status", { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const j = await res.json();
+        const [statusRes, hostRes] = await Promise.all([
+          fetch("/api/status", { cache: "no-store" }),
+          fetch("/api/admin/host-stats", { cache: "no-store" }),
+        ]);
+        if (!statusRes.ok) throw new Error(`HTTP ${statusRes.status}`);
+        const j = await statusRes.json();
         if (!cancelled) {
           setStatus(j);
           setError(false);
+        }
+        if (hostRes.ok) {
+          const h = await hostRes.json();
+          if (!cancelled) setHostStats(h);
         }
       } catch {
         if (!cancelled) setError(true);
@@ -64,39 +145,81 @@ export function StatusCards() {
     };
   }, []);
 
-  // Phase 1: empty sparkline (no historical store yet).
+  // Phase 1.5: empty sparkline (no historical store yet).
   const sparkData = Array(12).fill(status?.players.count ?? 0);
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <StatCard
-        label="Server Status"
-        value={
-          status?.online ? "ONLINE" : error || status === null ? "—" : "OFFLINE"
-        }
-        foot={status?.online ? "RCON responding" : "RCON unreachable"}
-        variant={status?.online ? "ok" : status === null ? "default" : "danger"}
-      />
-      <StatCard
-        label="Players Online"
-        value={status?.players.count ?? "—"}
-        foot={
-          status?.players.names.length
-            ? `${status.players.names.slice(0, 3).join(", ")}${status.players.names.length > 3 ? "…" : ""}`
-            : "no one connected"
-        }
-      />
-      <StatCard
-        label="Uptime"
-        value={status ? formatUptime(status.uptimeSec) : "—"}
-        foot="approx · since process start"
-      />
-      <StatCard
-        label="24h Players"
-        value={<Sparkline data={sparkData} />}
-        foot="historical store · Phase 2"
-        variant="default"
-      />
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard
+          label="Server Status"
+          value={
+            status?.online
+              ? "ONLINE"
+              : error || status === null
+                ? "—"
+                : "OFFLINE"
+          }
+          foot={status?.online ? "RCON responding" : "RCON unreachable"}
+          variant={
+            status?.online ? "ok" : status === null ? "default" : "danger"
+          }
+        />
+        <StatCard
+          label="Players Online"
+          value={status?.players.count ?? "—"}
+          foot={
+            status?.players.names.length
+              ? `${status.players.names.slice(0, 3).join(", ")}${status.players.names.length > 3 ? "…" : ""}`
+              : "no one connected"
+          }
+        />
+        <StatCard
+          label="Uptime"
+          value={status ? formatUptime(status.uptimeSec) : "—"}
+          foot={
+            status
+              ? status.uptimeSource === "rcon-connect"
+                ? "since first RCON connect"
+                : "since process start"
+              : "approx"
+          }
+        />
+        <StatCard
+          label="TPS"
+          value={status?.tps != null ? status.tps.toFixed(1) : "—"}
+          foot={
+            status?.tps != null
+              ? "approx · scraped from logs"
+              : "needs Lua mod for live TPS"
+          }
+        />
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <ContainerCard label="pz-server MEM" s={hostStats?.pzServer} />
+        <ContainerCard label="pz-crcon MEM" s={hostStats?.pzCrcon} />
+        <StatCard
+          label="In-game Time"
+          value="—"
+          foot="needs Lua mod (Phase 4)"
+        />
+        <StatCard
+          label="Weather"
+          value="—"
+          foot="see in-game · Phase 4 will surface here"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-1 gap-3">
+        <div className="pz-stat">
+          <div className="pz-label">24h Players</div>
+          <div className="v">
+            <Sparkline data={sparkData} />
+          </div>
+          <div className="foot">historical store · Phase 2</div>
+        </div>
+      </div>
     </div>
   );
 }

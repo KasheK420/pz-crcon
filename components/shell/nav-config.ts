@@ -34,6 +34,12 @@ export const NAV: NavGroup[] = [
         href: "/admin/players",
         minRole: "VIEWER",
       },
+      {
+        id: "logs",
+        label: "Server Logs",
+        href: "/admin/logs",
+        minRole: "MODERATOR",
+      },
     ],
   },
 ];
