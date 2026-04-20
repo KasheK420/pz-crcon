@@ -1,0 +1,45 @@
+{
+  "name": "pz-crcon",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": "22.x",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:validate": "prisma validate"
+  },
+  "dependencies": {
+    "next": "15.1.4",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "@types/react": "19.0.7",
+    "@types/react-dom": "19.0.3",
+    "typescript": "5.7.3",
+    "tailwindcss": "4.0.0",
+    "@tailwindcss/postcss": "4.0.0",
+    "postcss": "8.5.1",
+    "eslint": "9.18.0",
+    "eslint-config-next": "15.1.4",
+    "prettier": "3.4.2",
+    "vitest": "2.1.8",
+    "tsx": "4.19.2"
+  }
+}
