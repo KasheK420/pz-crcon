@@ -26,3 +26,13 @@ Option 2: bridge network. The container connects to RCON_HOST=85.215.222.81.
 - If the host changes its public IP (datacenter migration), update env.
 - Marginal extra hop through the kernel routing table; negligible at our
   RCON volume (<10 cmd/s).
+
+## Addendum (2026-04-20): WebSocket auth via cookie
+
+The spec section 8 suggests client-sent `auth` frames. We instead read the
+session cookie at the HTTP upgrade because:
+- Browsers already authenticate cookies per-origin; no extra logic.
+- WS handshake fails fast (no half-open authenticated socket).
+- Removes session-token handling from React entirely.
+Trade-off: WS-from-non-browser clients (e.g. CLI tools) need an API token
+mechanism - added in Phase 2 alongside the `ApiToken` model.
