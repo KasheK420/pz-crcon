@@ -2,7 +2,7 @@
 
 **Phase:** 1.7
 **Date:** 2026-04-20
-**Status:** Draft → Review
+**Status:** Review → Revised (v2, addresses spec-review blockers)
 **Replaces/Extends:** Phase 1.6 (read-only config viewer, admin tools)
 
 ## Problem
@@ -32,24 +32,41 @@ Non-goals (explicit YAGNI):
 
 ### Infrastructure (HomePL)
 
-Three compose changes to `/opt/docker/pz-crcon/docker-compose.yml`:
+Four compose changes to `/opt/docker/pz-crcon/docker-compose.yml`:
 
-1. **Bind-mount `pz-data` volume into pz-crcon** as read-write at `/pz-data`. This is the same named volume already owned by `pz-server`. Config files land at `/pz-data/Server/<prefix>.{ini,lua}`.
+1. **Bind-mount `pz-data` volume into pz-crcon** at `/pz-data`. Same named volume already owned by `pz-server`. Config files land at `/pz-data/Server/<prefix>.{ini,lua}`. Chunk 1 lands this **read-only** (reader-switch + logs fix); Chunk 3 flips to `:rw` when the writer is ready — minimizes how long the write surface is exposed.
 2. **Mount `/var/run/docker.sock:ro`** into pz-crcon for logs tailing, container stats, and env/inspect lookups. Already wired through `lib/docker/client.ts` but never reached production.
-3. **Add `tecnativa/docker-socket-proxy`** sidecar with `CONTAINERS=1 POST=1` on an isolated `pz-control-net` network, bound only to pz-crcon. This is the only route for mutating operations (start/stop/restart). The proxy refuses `/exec`, `/volumes`, `/networks`, etc., so even if pz-crcon is compromised the blast radius is "bounce the PZ container".
+3. **Add `tecnativa/docker-socket-proxy`** sidecar on an isolated `pz-control-net` network, reachable only from pz-crcon. The only route for mutating operations. Explicit env flag matrix (verified against `tecnativa/docker-socket-proxy` `haproxy.cfg` allowlists — the per-endpoint booleans are required; `POST=1` alone is insufficient):
+
+   | Flag | Value | Unblocks (under `/containers/<id>/*`) |
+   |---|---|---|
+   | `CONTAINERS=1` | 1 | GET `json`, `stats`, `logs`, `top` |
+   | `POST=1` | 1 | Enables POST verb globally |
+   | `CONTAINERS_START=1` | 1 | POST `start` |
+   | `CONTAINERS_STOP=1` | 1 | POST `stop` (honors `?t=<s>`) |
+   | `CONTAINERS_RESTART=1` | 1 | POST `restart` |
+   | `CONTAINERS_KILL=1` | 1 | POST `kill` (force-stop) |
+   | `EXEC=0` | 0 | Explicit deny |
+   | `VOLUMES=0 NETWORKS=0 IMAGES=0 SYSTEM=0 INFO=0` | 0 | Belt-and-braces deny |
+
+   Smoke check: `curl -sw '%{http_code}' http://docker-socket-proxy:2375/_ping` returns 200 from inside pz-crcon, times out elsewhere.
+
+4. **UID/GID alignment.** `renegademaster/zomboid-dedicated-server` runs as `steam` (UID/GID 1000). Pz-crcon's node image runs as `node` (UID 1000) or `nextjs` (UID 1001) depending on base. Pin pz-crcon to `user: "1000:1000"` in compose. At boot, `lib/pz/access-check.ts` runs `fs.access(PZ_CONFIG_DIR, R_OK | W_OK)`; failure logs WARN, flips a global `configAccessOk` flag, and PUT routes return 503 `{ code: 'config-dir-unreachable' }` until next restart re-checks. `GET /api/admin/config/access` surfaces the flag so the UI can show a red banner before the user attempts to save. Mitigates cross-container permission collisions.
 
 ```yaml
 # excerpt
 services:
   pz-crcon:
+    user: "1000:1000"                         # match pz-server's steam UID
     volumes:
-      - pz-data:/pz-data:rw
+      - pz-data:/pz-data:ro                   # Chunk 1; flips to :rw in Chunk 3
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       PZ_CONFIG_DIR: /pz-data/Server
       PZ_SERVER_DIR: /pz-data/Server          # existing var, re-pointed
       DOCKER_CONTROL_URL: http://docker-socket-proxy:2375
       PZ_CONTAINER_NAME: pz-server
+      PZ_BACKUP_DIR: /pz-data/Server/.backups
     networks:
       - proxy-net
       - db-net
@@ -58,9 +75,20 @@ services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:latest
     container_name: pz-crcon-socket-proxy
+    read_only: true
     environment:
       CONTAINERS: 1
       POST: 1
+      CONTAINERS_START: 1
+      CONTAINERS_STOP: 1
+      CONTAINERS_RESTART: 1
+      CONTAINERS_KILL: 1
+      EXEC: 0
+      VOLUMES: 0
+      NETWORKS: 0
+      IMAGES: 0
+      SYSTEM: 0
+      INFO: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
@@ -72,10 +100,10 @@ volumes:
     external: true
 
 networks:
-  pz-control-net:                 # new, not shared with anything else
+  pz-control-net: {}                          # not shared
 ```
 
-The `pz-data` volume was created by pz-server compose under `name: pz-data`, so `external: true` picks it up without duplication.
+The `pz-data` volume is defined by pz-server compose under `name: pz-data`, so `external: true` picks it up without duplication.
 
 ### Module layout
 
@@ -83,22 +111,22 @@ The `pz-data` volume was created by pz-server compose under `name: pz-data`, so 
 
 | Path | Responsibility |
 |---|---|
-| `lib/pz/writer.ts` | `writeServerIni(patch, opts)`, `writeSandboxVars(patch, opts)` — atomic file write (write tmp → fsync → rename), `.bak-<iso>` backup, retention of last 10 backups per file, mtime-based optimistic locking |
+| `lib/pz/writer.ts` | `writeServerIni(patch, opts)`, `writeSandboxVars(patch, opts)` — atomic file write (write tmp → fsync → rename), `.bak-<iso>` backup **in `/pz-data/Server/.backups/`** (sibling directory — keeps PZ's file listing clean and prevents the game from treating a `.bak` as a valid config), retention of last 10 backups per file, mtime-based optimistic locking, and a process-level **mutex** (`async-mutex`): writes reject with 409 `code: 'config-busy'` if another write is in flight or if `lib/server/lifecycle.ts` holds the lifecycle lock. Writes are further gated to only proceed when lifecycle phase is `idle` (otherwise 409 `code: 'lifecycle-busy'`) — eliminates races with pz-server rewriting the file during `quit` flush. |
 | `lib/pz/ini-descriptors.ts` (extend) | Grow to full coverage of every documented server.ini key; add `type`, `enum`, `min`, `max`, `step`, `default` fields |
 | `lib/pz/sandbox-descriptors.ts` (new) | Curated metadata for every sandbox var (~130 entries) — `{ path, label, type, min, max, step, options, help, section, default }` |
 | `lib/pz/validate.ts` | `validateIniPatch(patch, descriptors)`, `validateSandboxPatch(patch, descriptors)` returning Zod results; rejects unknown keys and out-of-range values |
-| `lib/pz/serialize-ini.ts` | Take the original raw ini + a patch map, produce new ini text preserving comments, order, blank lines, and case |
-| `lib/pz/serialize-sandbox-lua.ts` | Same for the Lua file — preserve structure, only rewrite scalar values we know about |
-| `lib/docker/control.ts` | HTTP client for `docker-socket-proxy`: `startPz()`, `stopPz(timeoutS)`, `restartPz(timeoutS)`, `inspectPz()` |
+| `lib/pz/serialize-ini.ts` | **Line-based rewriter.** PZ ini files are simple `Key=Value` one-per-line; regex `^(\s*)<Key>(\s*)=(\s*)(.*?)(\s*)$` per-key captures indentation, surrounding whitespace, and preserves the rest of the line (trailing comments after a `#` we leave intact). Unknown keys and non-matching lines (blank, comment-only) are passed through verbatim. Trailing newline and EOL style (`\r\n` vs `\n`) preserved by detecting from the first line break in the source. |
+| `lib/pz/serialize-sandbox-lua.ts` | **Line-based rewriter, constrained.** Extend `parse-sandbox-lua.ts` to optionally emit **source offsets** per `{ path, rawValueStart, rawValueEnd }` during parse; the serializer replaces just the value slice per target key while keeping all comments, commas, indentation, and blank lines intact. Assumption: one `Key = scalar,` per line in canonical PZ output. A parser validation pass at boot asserts this on the fixture, and serializer **refuses to write** if any target key's path was not captured with source offsets (falls back with a `code: 'serialize-shape-unsupported'` error visible in UI). This bounds behaviour instead of best-effort-guessing. Round-trip fuzz test (parse → serialize → parse) covers the shipped `servertest_SandboxVars.lua` seed + the live `MajorlukPZ_SandboxVars.lua` copy as fixtures. |
+| `lib/docker/control.ts` | **Separate dockerode instance** configured with `{ host: 'docker-socket-proxy', port: 2375, protocol: 'http' }` (distinct from the `socketPath`-based read client in `lib/docker/client.ts`). Exports `startPz()`, `stopPz(timeoutS)`, `restartPz(timeoutS)`, `killPz()`, `inspectPz()`, `waitForState(name, want, timeoutMs)`. Also exports `isProxyReachable(): Promise<boolean>` used by `/api/admin/server/state` to populate a `proxyReachable` field so the UI can distinguish "proxy down" from "container down". |
 | `lib/rcon/commands.ts` (extend) | Add `servermsg(text)`, `save()`, `quit()`, `reloadoptions()` helpers |
-| `lib/server/lifecycle.ts` | Orchestrates graceful flows: `gracefulRestart()`, `gracefulStop()`. Uses RCON for in-game warning + save, then Docker. Emits WS events per phase. |
+| `lib/server/lifecycle.ts` | Orchestrates graceful flows: `gracefulRestart(warningSeconds)`, `gracefulStop(warningSeconds)`. Uses RCON for in-game warning + save, then Docker. Emits WS events per phase. **Exclusive lock** (`async-mutex`) — concurrent lifecycle API calls from different admins reject with 409 `code: 'lifecycle-busy'`. Also exports the lock to the writer so saves are blocked during shutdown flushes. |
 | `lib/ws/channels.ts` (extend) | Add `server:lifecycle` channel with phase payload `{ phase: 'idle'|'warning'|'saving'|'stopping'|'starting', at, detail? }` |
 
 **Modified modules:**
 
 | Path | Change |
 |---|---|
-| `lib/pz/config-reader.ts` | Switch from `readContainerFile` (docker-exec) to direct `fs.readFile` on `PZ_CONFIG_DIR`. Keep docker-exec path as fallback so local dev without the bind-mount still works. |
+| `lib/pz/config-reader.ts` | Primary path: `fs.readFile(PZ_CONFIG_DIR/<prefix>.ini)`. No automatic fallback — if the bind-mount isn't present (dev without docker), the reader returns `{ ok: false, error: 'PZ_CONFIG_DIR unreachable' }` and the UI shows the access banner. Local dev uses a `.env.local` override `PZ_CONFIG_DIR=./tmp/pz-fixture/Server` pointing at a copied fixture — simpler than keeping two code paths. `detectServerPrefix()` is still socket-dependent (reads `SERVERNAME` env from container inspect); adds env override `PZ_SERVER_PREFIX` for the case where the socket is unavailable (falls through to "servertest"/hardcoded). |
 | `app/(admin)/admin/config/page.tsx` | Drop the read-only banner. Pass descriptors to the tabs. |
 | `components/config/config-tabs.tsx` | Wrap children with an edit-buffer context; each tab gets a Save button and wires into the save flow |
 | `app/(admin)/admin/page.tsx` | Add `<ServerControlsCard />` to the dashboard. |
@@ -167,30 +195,48 @@ if requiresRestart → RestartPromptModal
     ↓
 POST /api/admin/server/restart
     ↓ route (require ADMIN)
-lib/server/lifecycle.ts gracefulRestart():
-    publish('server:lifecycle', { phase: 'warning', detail: '30s' })
-    rcon servermsg "Server restarting in 30s (config reload). Please log out."
-    sleep 5s
+lifecycleMutex.acquire() → if busy: 409 'lifecycle-busy'
+gracefulRestart(warningSeconds=30):
+    now = Date.now()
+    publish('server:lifecycle', { phase: 'warning', detail: `${warningSeconds}s` })
+    rcon servermsg `Server restarting in ${warningSeconds}s (config reload). Please log out.`
+    await sleep(warningSeconds * 1000) — full budget; message is truthful
     publish 'saving'
-    rcon save
-    sleep 25s
+    rcon save  → await RCON response line "World saved" or timeout 120s
+                 (PZ's save is synchronous on the RCON channel; we wait for the
+                 terminator line, not a blind sleep). On timeout: WARN log +
+                 proceed to quit anyway.
     publish 'stopping'
     rcon quit                                      (initiates clean shutdown)
-    wait inspect → exited (poll proxy) with 60s cap → if still running: docker stop
+    waitForState('pz-server', 'exited', 90000)     — poll /containers/pz-server/json
+                                                      every 2s via proxy
+    if still running after 90s → stopPz(t=30)      (proxy POST /stop?t=30)
+    if still running after another 35s → killPz()  (proxy POST /kill)
     publish 'starting'
-    docker start pz-server
-    wait inspect → running with 600s cap (B42 big modlist)
-    publish 'idle'
-    return 200
+    startPz()                                      (proxy POST /start)
+    waitForState('pz-server', 'running', 600000)   — B42 big modlist can be slow
+                                                      on first-run; normal boot
+                                                      after that is ~60-120s.
+    if running but the process dies within 30s post-start:
+       publish 'idle' { detail: 'start-failed', exitCode }
+    else:
+       publish 'idle'
+    return 200 { durationMs: Date.now() - now }
+    ↓ finally
+lifecycleMutex.release()
 ```
 
 ### Graceful edge cases
 
-- **RCON is already down** when `Stop` is invoked → skip RCON ceremony, log warning, go straight to docker stop.
-- **docker start returns but container exits within 30s** (PZ crashed on boot) → emit `phase: 'idle'` with `detail: 'start-failed'` and surface in UI.
-- **Concurrent edits** (two admins) → mtime-race → client reloads draft, warns.
-- **Descriptor drift** (file contains a key we don't know) → preserve on write; UI shows "Unknown key" pill, no control rendered.
+- **RCON is already down** when `Stop`/`Restart` is invoked → detected by initial RCON ping; skip RCON ceremony, log warning, go straight to docker stop with `t=30` (so PZ's signal handler still gets a chance to save).
+- **`rcon save` never returns** → 120s timeout; log WARN; proceed to quit. UI shows `phase: 'saving'` with a `detail: 'save-timeout-proceeding'` marker.
+- **docker start returns but container exits within 30s** (PZ crashed on boot) → emit `phase: 'idle'` with `detail: 'start-failed', exitCode` and surface in UI with a red banner + "View last 100 log lines" quick action.
+- **docker-socket-proxy unreachable** → lifecycle routes return 503 `code: 'proxy-unreachable'`; `/api/admin/server/state` reports `proxyReachable: false`; UI renders controls disabled with a clear error badge; users revert to SSH fallback (documented in UI tooltip).
+- **Concurrent panel edits** (two admins) → mtime-race → client reloads draft with diff markers; warns.
+- **Lifecycle double-click** (ADMIN presses Restart twice fast) → mutex rejects second with 409; UI disables the button for the duration.
+- **Descriptor drift** (file contains a key we don't know) → preserve on write; UI shows "Unknown key" pill with a raw string input (editable) so mod-added sandbox keys aren't stranded.
 - **Out-of-range value committed previously** (e.g. someone set via SSH) → displayed with warning border; still editable.
+- **Abort current phase (ADMIN, `rcon save` stuck 60s+)** → separate endpoint `POST /api/admin/server/abort` (ADMIN+) cancels the in-flight graceful op, releases the mutex, and force-stops. Audit log records the abort with the phase it was in.
 
 ### Logs fix
 
@@ -208,12 +254,13 @@ Secondary improvement: the current streamer warns "container not found or Docker
 | Force stop | OWNER | Can lose up-to-autosave progress |
 | View logs | MODERATOR | (unchanged) |
 
-RCON password is masked in the ini view (shown as `••••••` with reveal toggle for OWNER only).
+**RCON password handling.** Server-side redaction: the `/api/admin/config/ini` GET strips `RCONPassword` (and `AdminPassword`, `ServerPassword` if present) from the response for any role below OWNER — replaced with the sentinel `"__REDACTED__"` and a `redacted: true` flag per key. A separate `GET /api/admin/config/ini/secrets` (OWNER only) returns just those fields unredacted, used by the "reveal" toggle. This prevents a casual VIEWER inspecting DevTools from reading the secret.
 
-All write endpoints protected by:
-- Role check (via existing `atLeast()`)
-- CSRF: Next.js server actions are same-origin; API PUTs require `X-CSRF-Token` header matching a cookie set on page load (new utility, keeps this clean)
-- Rate limit: 10 saves/min per user (in-memory counter)
+**CSRF.** Auth.js already issues a CSRF token for its own endpoints at `/api/auth/csrf` (and writes a `next-auth.csrf-token` cookie). We reuse that: the PUT endpoints accept `X-CSRF-Token` header and validate it matches the cookie value. A small client helper `lib/csrf/fetch.ts` wraps `fetch` to auto-inject the header from the cookie on any mutating method — no new cookie plumbing. Any mismatch → 403 `code: 'csrf'`. This avoids inventing a parallel CSRF scheme.
+
+**Rate limit.** 10 mutating calls/min per user via in-memory counter (`Map<userId, { count, resetAt }>`). Scoped to saves + lifecycle actions (separate quotas: 10 saves/min, 5 lifecycle actions/min). **Single-instance assumption** — pz-crcon runs as one replica (no horizontal scale). Horizontal scaling would require moving the counter to Redis; documented as a follow-on.
+
+**Audit log.** New Prisma model `AuditEvent { id, userId, kind, detail, createdAt }` with `kind` enum `CONFIG_WRITE | LIFECYCLE_START | LIFECYCLE_STOP | LIFECYCLE_RESTART | LIFECYCLE_FORCE_STOP | LIFECYCLE_ABORT`. Writes persist `{ file, diff }` in `detail` JSON; lifecycle persists `{ phase, duration, warningSeconds, outcome }`. Exposed read-only at `GET /api/admin/audit?cursor=&limit=` (MODERATOR+). UI: small recent-events card on `/admin` (below server controls).
 
 ## Data: descriptors
 
@@ -243,7 +290,7 @@ Each entry:
 }
 ```
 
-We will cover **every key present in a fresh servertest_SandboxVars.lua** so there are no unknown-key pills in the default state.
+We will cover **every key present in a fresh servertest_SandboxVars.lua** (stock B42). **Mod-added keys** (some of our 53 mods inject their own sandbox fields) are handled by the fallback path: no descriptor → the UI renders the raw parsed type (bool→Switch, number→Input, string→Input) with label = `decamelCase(key)`, help = "(mod-added key, see mod docs)", and a muted `[mod]` badge. Coverage test enforces: every key in the **stock fixture** has a descriptor; mod-added keys are allowed to be descriptor-less. A secondary fixture copied from the live `MajorlukPZ_SandboxVars.lua` is checked in at `tests/fixtures/live-sandbox.lua` to snapshot the mod-key shape we see in practice.
 
 ### server.ini
 
@@ -253,37 +300,76 @@ Same shape. Extend `ini-descriptors.ts` from the current ~30 keys to full covera
 
 Unit (`tests/unit/pz/`):
 
-- `writer.round-trip.test.ts` — parse → write-patch → parse equals patched
-- `writer.preserves-shape.test.ts` — original comments / blank lines / ordering preserved in `serialize-ini` and `serialize-sandbox-lua`
-- `writer.backup.test.ts` — `.bak-<iso>` created, 11th backup prunes oldest
-- `writer.mtime-race.test.ts` — concurrent write gets 409
+- `writer.round-trip.test.ts` — parse → write-patch → parse equals patched on `servertest_SandboxVars.lua` and `live-sandbox.lua` fixtures (fuzz: 1000 random patches per file)
+- `writer.preserves-shape.test.ts` — original comments / blank lines / indentation / trailing whitespace / EOL style preserved in both serializers
+- `writer.source-offsets.test.ts` — sandbox parser emits offsets for every key in fixture; serialize refuses (`code: 'serialize-shape-unsupported'`) for synthetic multi-pair-per-line input
+- `writer.backup.test.ts` — `.bak-<iso>` created in `.backups/`, 11th backup prunes oldest (including clock-skew scenario where timestamps are out of order)
+- `writer.mtime-race.test.ts` — concurrent panel write gets 409
+- `writer.config-busy.test.ts` — `async-mutex` serializes writes; second call returns `code: 'config-busy'`
+- `writer.lifecycle-gate.test.ts` — write during non-`idle` phase returns `code: 'lifecycle-busy'`
+- `writer.fs-errors.test.ts` — ENOSPC / EACCES / read-only FS → typed error, no partial file on disk
 - `validate.test.ts` — out-of-range / unknown-key / wrong-type all rejected
-- `lifecycle.test.ts` — mocked RCON + docker-control, asserts phase progression
-- `descriptors.coverage.test.ts` — for every key in `tests/fixtures/servertest_SandboxVars.lua` there is a matching descriptor
+- `lifecycle.test.ts` — mocked RCON + docker-control, asserts phase progression including: rcon-down skip, save-timeout fallthrough, start-failed detection, mutex double-click, abort endpoint
+- `lifecycle.proxy-down.test.ts` — 503 + UI state when proxy is unreachable
+- `descriptors.coverage.test.ts` — every key in stock `servertest_SandboxVars.lua` has a descriptor; mod-added keys in `live-sandbox.lua` may not
+- `access-check.test.ts` — `/api/admin/config/access` reflects `configAccessOk` flag; writes 503 when false
+- `secrets.redaction.test.ts` — non-OWNER gets `"__REDACTED__"` for RCON/Admin/Server passwords in GET; OWNER endpoint returns real values
 
 Integration (`tests/integration/`):
 
-- `api.config.test.ts` — PUT requires OWNER, mtime lock, diff is correct
-- `api.server.test.ts` — lifecycle routes require ADMIN, emit WS events
+- `api.config.test.ts` — PUT requires OWNER, CSRF enforced, mtime lock, diff is correct, rate-limit after 10/min
+- `api.server.test.ts` — lifecycle routes require ADMIN, emit WS events, concurrent restart → 409, abort endpoint works
+- `docker-proxy.endpoints.test.ts` — CI smoke test that spins up a `tecnativa/docker-socket-proxy` with the exact env matrix and hits each endpoint we depend on; asserts 200 for allowed verbs + 403 for disallowed (exec, volumes, etc.). Runs in docker-in-docker in the GH Actions job.
 
-Manual (post-deploy):
+Manual (post-deploy, against live `pz-server`):
 
-- Open `/admin/config`, flip `PopulationMultiplier` 0.65 → 1.0, save, diff confirms, restart prompt appears
-- Restart via dashboard, watch live countdown in UI, PZ container bounces, join game → verify change applied
-- `/admin/logs` shows live lines
-- Force stop confirm dialog requires exact-match confirm text
+- Open `/admin/config`, flip `PopulationMultiplier` 0.65 → 1.0, save → diff confirms → restart prompt appears
+- Restart via dashboard, watch live phase badge transitions (`warning` → `saving` → `stopping` → `starting` → `idle`), `servermsg` appears in-game, PZ container bounces, rejoin → verify change applied
+- `/admin/logs` shows live lines; kill docker-socket-proxy → page shows diagnostic, restore → lines resume
+- Force stop confirm dialog requires exact-match confirm text (`FORCE-STOP`)
+- Rollback drill: stop docker-socket-proxy, revert compose to Chunk 0 state (no mounts), `docker compose up -d --force-recreate`, `/admin/logs` degrades gracefully, SSH path still functional
+- Watchtower race: trigger `docker compose pull` mid-restart → lifecycle completes or aborts cleanly; no corrupted container state
 
 ## Chunks
 
-Tight, each one merges to a working state:
+Tight, each one merges to a working state. **Chunk 1 mounts `pz-data` read-only**; Chunk 3 upgrades to `:rw` when the writer is ready — narrows the window during which the wider surface is exposed.
 
-1. **Infra + logs fix** — compose (volume + socket:ro + proxy + pz-control-net), ensure `installLogStreamer()` called on boot, deploy. Acceptance: `/admin/logs` shows lines, `/api/admin/host-stats` works (already did, regression check).
-2. **Descriptor data** — extend `ini-descriptors.ts`, add `sandbox-descriptors.ts` + `data/pz/ServerSandboxOptions.lua` seed file, coverage test passes on servertest fixture.
-3. **Writer + validators** — `serialize-ini.ts`, `serialize-sandbox-lua.ts`, `writer.ts`, `validate.ts`, all unit tests green.
-4. **Config API + editable UI** — PUT endpoints, typed controls, DiffModal, RestartPromptModal, config-reader switched to FS path. Acceptance: round-trip edit → save → diff → restart-prompt via UI in dev.
-5. **Lifecycle** — `lib/docker/control.ts`, `lib/rcon/commands.ts` additions, `lib/server/lifecycle.ts`, lifecycle API routes, `ServerControlsCard` + WS phase broadcast. Acceptance: start/stop/restart/force-stop all work on live container with visible phase progression.
+1. **Infra + logs fix + access-check + reader-switch** —
+   - Compose: `user: 1000:1000`, `pz-data:/pz-data:ro`, `docker.sock:ro`, `docker-socket-proxy` service with full env matrix, `pz-control-net` network.
+   - `lib/pz/access-check.ts` boot-time check; `GET /api/admin/config/access` route.
+   - Switch `lib/pz/config-reader.ts` to FS path (falls through to `{ ok: false }` if unreachable).
+   - Fix log-streamer diagnostic messages to distinguish socket-missing vs container-missing.
+   - Ensure `installLogStreamer()` is wired at WS server boot (verify in `lib/ws/server.ts`).
+   - Acceptance: `/admin/logs` shows lines; `/api/admin/config/access` returns `{ ok: true }`; `/admin/config` still renders (read-only).
+2. **Descriptor data (full M2)** —
+   - Check in `data/pz/ServerSandboxOptions.lua` (B42 stock).
+   - Extend `lib/pz/ini-descriptors.ts` from ~30 to full coverage (~120 keys).
+   - New `lib/pz/sandbox-descriptors.ts` with ~130 curated entries.
+   - Coverage test on stock + live fixtures.
+3. **Writer + validators + source-offset parser** —
+   - Extend `parse-sandbox-lua.ts` to emit source offsets.
+   - `serialize-ini.ts`, `serialize-sandbox-lua.ts`.
+   - `lib/pz/writer.ts` with mutex, mtime lock, `.backups/` retention.
+   - `lib/pz/validate.ts` with Zod.
+   - `async-mutex` npm dep.
+   - **Compose flip: `pz-data:/pz-data:rw`** (deploy step in this chunk).
+   - Audit log Prisma model + migration.
+   - All unit tests green.
+4. **Config API + editable UI + audit** —
+   - `PUT /api/admin/config/ini` and `.../sandbox` with CSRF, rate-limit, secrets redaction.
+   - `GET /api/admin/audit` route + small card on `/admin`.
+   - Typed controls (`SandboxVarControl`), dirty tracking, per-section Save button.
+   - `DiffModal`, `RestartPromptModal` — **Restart button disabled** in this chunk with tooltip "Lifecycle ships in Phase 1.7 Chunk 5".
+   - Acceptance: round-trip edit → save → diff → restart-prompt shows (restart button disabled), audit row persists.
+5. **Lifecycle + abort** —
+   - `lib/docker/control.ts` (TCP dockerode → proxy).
+   - Extend `lib/rcon/commands.ts` with `servermsg`, `save`, `quit`, `reloadoptions`; `save` awaits terminator line.
+   - `lib/server/lifecycle.ts` with mutex, phase broadcast, timeouts, abort.
+   - API routes: `start`, `stop`, `restart`, `force-stop`, `abort`, `state`.
+   - `ServerControlsCard` wired to WS `server:lifecycle`; enable RestartPromptModal button.
+   - Acceptance: start/stop/restart/force-stop all work on live container with visible phase progression; abort recovers a stuck save; concurrent clicks get 409.
 
-Deployment at each chunk via the existing Watchtower pipeline (push to main → DockerHub → auto-pull). Compose change in Chunk 1 is one-time on the host.
+Deployment at each chunk via Watchtower (push to main → DockerHub → auto-pull). Compose changes are one-time on the host — Chunk 1 installs mounts + proxy; Chunk 3 flips `:ro` → `:rw`.
 
 ## Rollback
 
