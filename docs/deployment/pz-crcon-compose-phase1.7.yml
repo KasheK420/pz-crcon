@@ -7,7 +7,7 @@ services:
     networks: [proxy-net, db-net, pz-control-net]
     env_file: [.env]
     volumes:
-      - pz-data:/pz-data:ro
+      - pz-data:/pz-data:rw
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       PZ_CONFIG_DIR: /pz-data/Server
