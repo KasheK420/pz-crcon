@@ -1,39 +1,30 @@
 import { loadEnv } from "@/lib/env";
-import { getLogger } from "@/lib/logger";
+import type { Role } from "@/lib/auth/role";
 
-const log = () => getLogger().child({ mod: "discord" });
-
-interface GuildMember {
-  user: { id: string };
-  roles: string[];
+function parseAdminIds(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 /**
- * Check if a Discord user is a member of the configured guild AND
- * has the configured admin role. Uses the bot token; the bot must be
- * a member of the guild.
+ * Resolve what role a Discord user should have based on the `DISCORD_ADMIN_IDS`
+ * allowlist. First ID in the list is the OWNER; the rest are ADMINs. Anyone
+ * not in the list is rejected (null).
+ *
+ * No Discord bot / guild required. OAuth proves identity; this list is the
+ * entire authorization policy. Suitable for small private servers.
  */
-export async function checkGuildMembership(discordId: string): Promise<{
-  inGuild: boolean;
-  hasAdminRole: boolean;
-}> {
+export function resolveRoleForDiscordId(discordId: string): Role | null {
   const env = loadEnv();
-  const url = `https://discord.com/api/v10/guilds/${env.DISCORD_GUILD_ID}/members/${discordId}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` },
-    cache: "no-store",
-  });
-  if (res.status === 404) {
-    log().info({ discordId }, "user not in guild");
-    return { inGuild: false, hasAdminRole: false };
-  }
-  if (!res.ok) {
-    log().error({ status: res.status }, "discord guild lookup failed");
-    throw new Error(`Discord API ${res.status}`);
-  }
-  const member = (await res.json()) as GuildMember;
-  return {
-    inGuild: true,
-    hasAdminRole: member.roles.includes(env.DISCORD_ADMIN_ROLE_ID),
-  };
+  const ids = parseAdminIds(env.DISCORD_ADMIN_IDS);
+  if (ids.length === 0) return null;
+  if (ids[0] === discordId) return "OWNER";
+  if (ids.includes(discordId)) return "ADMIN";
+  return null;
+}
+
+export function isAllowedDiscordId(discordId: string): boolean {
+  return resolveRoleForDiscordId(discordId) !== null;
 }

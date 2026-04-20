@@ -7,10 +7,10 @@ const schema = z.object({
   DATABASE_URL: z.string().url(),
   DISCORD_CLIENT_ID: z.string().min(1),
   DISCORD_CLIENT_SECRET: z.string().min(1),
-  DISCORD_GUILD_ID: z.string().min(1),
-  DISCORD_ADMIN_ROLE_ID: z.string().min(1),
-  DISCORD_BOT_TOKEN: z.string().min(1),
-  BOOTSTRAP_OWNER_DISCORD_ID: z.string().min(1),
+  // Comma-separated Discord user IDs of admins. First ID in the list
+  // becomes OWNER on first login; rest become ADMIN. No bot / guild
+  // required — OAuth proves identity, this list proves authorization.
+  DISCORD_ADMIN_IDS: z.string().min(1),
   RCON_HOST: z.string().min(1),
   RCON_PORT: z.coerce.number().int().min(1).max(65535),
   RCON_PASSWORD: z.string().min(1),

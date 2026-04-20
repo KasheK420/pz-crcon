@@ -7,10 +7,7 @@ const baseEnv: Record<string, string> = {
   DATABASE_URL: "postgresql://user:pw@host:5432/db",
   DISCORD_CLIENT_ID: "1234567890",
   DISCORD_CLIENT_SECRET: "abc",
-  DISCORD_GUILD_ID: "9876543210",
-  DISCORD_ADMIN_ROLE_ID: "5555555555",
-  DISCORD_BOT_TOKEN: "Bot.token.value",
-  BOOTSTRAP_OWNER_DISCORD_ID: "286560250578862080",
+  DISCORD_ADMIN_IDS: "286560250578862080",
   RCON_HOST: "85.215.222.81",
   RCON_PORT: "27015",
   RCON_PASSWORD: "secret",
@@ -25,7 +22,7 @@ const ORIGINAL_ENV = { ...process.env };
 
 function clearAllRelevant() {
   for (const k of Object.keys(ORIGINAL_ENV)) {
-    if (k in baseEnv || k.startsWith("DISCORD_") || k.startsWith("RCON_") || k.startsWith("PZ_") || k === "WEBHOOK_HMAC_SECRET" || k === "BACKUP_PATH" || k === "BACKUP_RETENTION_DAYS" || k === "BOOTSTRAP_OWNER_DISCORD_ID" || k === "DATABASE_URL" || k === "APP_URL" || k === "NEXTAUTH_SECRET" || k === "LOG_LEVEL" || k === "WS_HEARTBEAT_SEC") {
+    if (k in baseEnv || k.startsWith("DISCORD_") || k.startsWith("RCON_") || k.startsWith("PZ_") || k === "WEBHOOK_HMAC_SECRET" || k === "BACKUP_PATH" || k === "BACKUP_RETENTION_DAYS" || k === "DATABASE_URL" || k === "APP_URL" || k === "NEXTAUTH_SECRET" || k === "LOG_LEVEL" || k === "WS_HEARTBEAT_SEC") {
       delete process.env[k];
     }
   }
