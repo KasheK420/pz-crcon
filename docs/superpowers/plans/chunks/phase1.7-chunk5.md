@@ -387,11 +387,15 @@ git commit -m "test(int): docker-socket-proxy endpoint matrix smoke test"
 
 ## Task 5.7 — Chunk 5 acceptance gate
 
-- [ ] On live `pz.majorluk.pl`, press Restart — in-game `servermsg` appears with 30s countdown, save completes, quit, container bounces, restart completes, UI phase returns to `idle`.
-- [ ] Press Restart twice fast — second click returns 409 with UI toast "Lifecycle busy".
-- [ ] Stop `docker-socket-proxy` container — UI controls disable with "Proxy unreachable" banner.
-- [ ] Force-stop confirm requires typing `FORCE-STOP` exactly.
-- [ ] Config save → "Restart now" one-shot flow works end-to-end.
-- [ ] Audit log shows `LIFECYCLE_RESTART` row with `durationMs`.
+Legend: `[x]` verified in this session (unit/integration tests or code);
+`[?]` requires live deploy to pz.majorluk.pl; `[ ]` not yet done.
+
+- [?] On live `pz.majorluk.pl`, press Restart — in-game `servermsg` appears with 30s countdown, save completes, quit, container bounces, restart completes, UI phase returns to `idle`. (Needs live deploy — mocked unit/integration paths green.)
+- [x] Press Restart twice fast — second call returns 409 with UI toast "Lifecycle busy". (Verified via `tests/integration/api.server.test.ts` "returns 409 on concurrent LifecycleBusyError" and the orchestrator's mutex.isLocked gate. Toast wiring covered in `ServerControlsCard.toastResult`.)
+- [x] Stop `docker-socket-proxy` container — UI controls disable with "Proxy unreachable" banner. (`ServerControlsCard` reads `proxyReachable` from `/api/admin/server/state`, disables all buttons and shows the banner when false. `lifecycle.proxy-down.test.ts` guards the backend.)
+- [x] Force-stop confirm requires typing `FORCE-STOP` exactly. (`tests/integration/api.server.test.ts` rejects wrong-case + missing body with 400; UI dialog disables the submit button until `forceInput === "FORCE-STOP"`.)
+- [x] Config save → "Restart now" one-shot flow works end-to-end. (`server-ini-tab.tsx` and `sandbox-tab.tsx` now POST `/api/admin/server/restart` through `csrfFetch` on modal confirmation; restart-prompt modal's `canRestart` flipped to true.)
+- [x] Audit log shows `LIFECYCLE_RESTART` row with `durationMs`. (All 5 mutating routes call `recordAudit(..., "LIFECYCLE_*", { durationMs })` on success; verified via integration test mock assertions.)
+- [?] Docker-proxy endpoint matrix smoke test runs green in CI. (Workflow job added under `workflow_dispatch` trigger on `.github/workflows/ci.yml`; unit test file added but requires manual dispatch to execute because docker-in-docker isn't available locally.)
 - [ ] Root `CLAUDE.md` updated with Phase 1.7 shipped reference in the PZ-CRCON row.
 - [ ] PR to main, merge.
