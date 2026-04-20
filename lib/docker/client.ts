@@ -10,6 +10,9 @@
  */
 
 import Docker from "dockerode";
+import { getLogger } from "@/lib/logger";
+
+const log = () => getLogger().child({ mod: "docker/client" });
 
 let _docker: Docker | null = null;
 
@@ -18,6 +21,7 @@ const SOCKET_PATH = process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.sock";
 export function getDocker(): Docker {
   if (_docker) return _docker;
   _docker = new Docker({ socketPath: SOCKET_PATH });
+  log().info({ socketPath: SOCKET_PATH }, "docker socket client configured");
   return _docker;
 }
 
@@ -89,7 +93,17 @@ export async function getContainerStats(containerName: string): Promise<Containe
         running: false,
       };
     }
-  } catch {
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException & { statusCode?: number };
+    log().warn(
+      {
+        container: containerName,
+        code: err.code,
+        statusCode: err.statusCode,
+        msg: err.message,
+      },
+      "getContainerStats inspect failed",
+    );
     return null;
   }
   try {
@@ -145,7 +159,17 @@ export async function inspectContainer(containerName: string): Promise<Container
     const c = docker.getContainer(containerName);
     const info = (await c.inspect()) as unknown as ContainerInspect;
     return info;
-  } catch {
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException & { statusCode?: number };
+    log().warn(
+      {
+        container: containerName,
+        code: err.code,
+        statusCode: err.statusCode,
+        msg: err.message,
+      },
+      "inspectContainer failed",
+    );
     return null;
   }
 }

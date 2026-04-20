@@ -3,18 +3,20 @@
 /**
  * Native Leaflet rendering of the Project Zomboid Knox County map.
  *
- * Tile servers (in fallback order):
- *   1. https://pzmap.crash-override.net/tiles/v0_unstable/B41/{z}/{x}/{y}.png
- *      — community-maintained, B41 unstable branch (matches our server).
- *   2. https://map.projectzomboid.com/tiles/{z}/{x}/{y}.png
- *      — TIS-hosted official map. Older content but reliable.
+ * Tile source is configured via the `NEXT_PUBLIC_PZ_TILE_URL` env var,
+ * which is a Leaflet template string containing `{z}/{x}/{y}` (or
+ * `{z}/{x}_{y}` for DZI-style layouts). Example values:
  *
- * If both fail (404 or network error), the layer is removed and a
- * "tiles unavailable" overlay is rendered on the otherwise-empty
- * Leaflet canvas — the marker layer still works in either case.
+ *   /api/tiles/knox/{z}/{x}_{y}.png   (self-hosted, DZI output from pzmap2dzi)
+ *   /api/tiles/knox/{z}/{x}/{y}.png   (self-hosted, Leaflet/XYZ style)
  *
- * We're guests on both tile hosts. If they go away, the long-term plan
- * is to render and self-host tiles via pzmap2dzi (Phase 2 task).
+ * When the variable is unset we skip attaching any tile layer at all
+ * and render a "tiles unavailable" overlay directly — the old public
+ * community tile hosts (pzmap.crash-override.net, map.projectzomboid.com)
+ * both went down / CORS-blocked in 2026-04 and we no longer attempt them.
+ * Player markers render in either case.
+ *
+ * Generation pipeline: see `docs/deployment/pz-map-tiles.md`.
  *
  * World coordinates: Knox County extent is approximately 0,0 → 10224,10576.
  * We use Leaflet CRS.Simple so x and y are in tile-world space directly.
@@ -43,32 +45,38 @@ interface PositionsResponse {
 
 const WORLD_W = 10224;
 const WORLD_H = 10576;
-const PRIMARY_TILE_URL =
-  "https://pzmap.crash-override.net/tiles/v0_unstable/B41/{z}/{x}/{y}.png";
-const FALLBACK_TILE_URL = "https://map.projectzomboid.com/tiles/{z}/{x}/{y}.png";
-const MIN_ZOOM = 0;
-const MAX_ZOOM = 5;
+
+// Tile configuration (all optional, read at module scope so webpack inlines
+// them into the client bundle at build time).
+const TILE_URL = process.env.NEXT_PUBLIC_PZ_TILE_URL ?? "";
+const TILE_SIZE = Number(process.env.NEXT_PUBLIC_PZ_TILE_SIZE ?? 256);
+const MIN_ZOOM = Number(process.env.NEXT_PUBLIC_PZ_MIN_ZOOM ?? 0);
+const MAX_ZOOM = Number(process.env.NEXT_PUBLIC_PZ_MAX_ZOOM ?? 5);
 const POLL_MS = 10_000;
+
+// Fail the tile layer fast: two tileerror events are enough to decide the
+// server is unreachable. Leaflet fires many tileerrors in parallel, so a
+// lower threshold keeps the console clean.
+const TILE_ERROR_THRESHOLD = 2;
 
 function buildTileLayer(
   url: string,
-  onAllErrored: () => void
-): L.TileLayer & { _erroredOnce?: boolean } {
+  onFailed: () => void,
+): L.TileLayer & { _failed?: boolean } {
   const layer = L.tileLayer(url, {
     minZoom: MIN_ZOOM,
     maxZoom: MAX_ZOOM,
-    tileSize: 256,
+    tileSize: TILE_SIZE,
     noWrap: true,
-    attribution: "PZ tiles · pzmap community / TIS",
+    attribution: "PZ tiles · self-hosted",
     crossOrigin: true,
-  }) as L.TileLayer & { _erroredOnce?: boolean };
+  }) as L.TileLayer & { _failed?: boolean };
   let errorCount = 0;
   layer.on("tileerror", () => {
     errorCount++;
-    // Treat repeated errors as "this server is down".
-    if (errorCount >= 4 && !layer._erroredOnce) {
-      layer._erroredOnce = true;
-      onAllErrored();
+    if (errorCount >= TILE_ERROR_THRESHOLD && !layer._failed) {
+      layer._failed = true;
+      onFailed();
     }
   });
   return layer;
@@ -93,7 +101,10 @@ export function KnoxMap() {
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
-  const [tilesAvailable, setTilesAvailable] = useState(true);
+  // Start optimistic only when a tile URL is configured; otherwise we
+  // immediately render the "tiles unavailable" overlay and skip all
+  // network tile loads (no external hosts, no console spam).
+  const [tilesAvailable, setTilesAvailable] = useState(Boolean(TILE_URL));
   const [stale, setStale] = useState(false);
   const [positions, setPositions] = useState<Pos[]>([]);
   const [online, setOnline] = useState(false);
@@ -115,18 +126,8 @@ export function KnoxMap() {
     map.fitBounds(bounds);
     mapRef.current = map;
 
-    function attachFallback() {
-      if (!mapRef.current) return;
-      // Remove primary layer if still attached, drop in fallback.
-      if (tileLayerRef.current) {
-        try {
-          mapRef.current.removeLayer(tileLayerRef.current);
-        } catch {
-          // ignore
-        }
-      }
-      const fallback = buildTileLayer(FALLBACK_TILE_URL, () => {
-        // Both servers down — give up and show overlay.
+    if (TILE_URL) {
+      const tiles = buildTileLayer(TILE_URL, () => {
         if (tileLayerRef.current && mapRef.current) {
           try {
             mapRef.current.removeLayer(tileLayerRef.current);
@@ -137,13 +138,9 @@ export function KnoxMap() {
         }
         setTilesAvailable(false);
       });
-      fallback.addTo(mapRef.current);
-      tileLayerRef.current = fallback;
+      tiles.addTo(map);
+      tileLayerRef.current = tiles;
     }
-
-    const primary = buildTileLayer(PRIMARY_TILE_URL, attachFallback);
-    primary.addTo(map);
-    tileLayerRef.current = primary;
 
     markerLayerRef.current = L.layerGroup().addTo(map);
 
@@ -244,9 +241,10 @@ export function KnoxMap() {
 
       {!tilesAvailable && (
         <div className="absolute inset-0 z-[400] grid place-items-center pointer-events-none">
-          <div className="bg-pz-bg-0/85 border border-pz-border-lo px-4 py-3 text-pz-muted text-xs pz-mono">
-            Map tiles unavailable. The community tile server appears to be
-            down — markers continue to render.
+          <div className="bg-pz-bg-0/85 border border-pz-border-lo px-4 py-3 text-pz-muted text-xs pz-mono max-w-[420px] text-center leading-relaxed">
+            {TILE_URL
+              ? "Map tiles unavailable. The tile server appears to be down — markers continue to render."
+              : "Map tiles not configured. Generate a tile pyramid with pzmap2dzi and set NEXT_PUBLIC_PZ_TILE_URL — see docs/deployment/pz-map-tiles.md. Player markers still render."}
           </div>
         </div>
       )}
