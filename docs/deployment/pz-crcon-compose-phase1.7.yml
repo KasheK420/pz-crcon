@@ -28,6 +28,9 @@ services:
     container_name: pz-crcon-socket-proxy
     restart: unless-stopped
     read_only: true
+    tmpfs:
+      - /tmp
+      - /run
     networks: [pz-control-net]
     environment:
       CONTAINERS: 1
