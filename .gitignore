@@ -10,6 +10,7 @@
 *.p12
 *.pfx
 secrets/
+!app/api/**/secrets/
 credentials/
 *_secret.*
 *_credentials.*

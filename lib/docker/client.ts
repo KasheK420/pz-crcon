@@ -225,20 +225,41 @@ export async function readContainerFile(
 
 /**
  * Stream raw log lines from a container's stdout/stderr, starting from
- * the tail. Returns the dockerode log stream and a closer.
+ * the tail. Returns a tagged result distinguishing socket-missing vs
+ * container-missing so the log-streamer can publish a specific diagnostic.
  *
  * The caller is responsible for parsing Docker's binary multiplexed log
  * frames (when TTY=false). For TTY=true containers (which `pz-server`
  * is, by virtue of `tty: true` in compose) the stream is plain text, so
  * we just emit decoded lines directly.
  */
+export type TailFailure = "socket" | "container" | "other";
+
+export interface TailHandle {
+  stream: NodeJS.ReadableStream;
+  close: () => void;
+}
+
 export async function tailContainerLogs(
   containerName: string,
   opts: { tail?: number } = {},
-): Promise<{ stream: NodeJS.ReadableStream; close: () => void } | null> {
+): Promise<{ ok: true; handle: TailHandle } | { ok: false; reason: TailFailure; detail: string }> {
   const docker = getDocker();
   try {
+    await docker.ping();
+  } catch (e) {
+    return { ok: false, reason: "socket", detail: e instanceof Error ? e.message : String(e) };
+  }
+  try {
     const container = docker.getContainer(containerName);
+    const inspect = await container.inspect();
+    if (!inspect.State?.Running) {
+      return {
+        ok: false,
+        reason: "container",
+        detail: `not running (status=${inspect.State?.Status})`,
+      };
+    }
     const stream = (await container.logs({
       stdout: true,
       stderr: true,
@@ -247,16 +268,19 @@ export async function tailContainerLogs(
       timestamps: false,
     })) as unknown as NodeJS.ReadableStream;
     return {
-      stream,
-      close: () => {
-        try {
-          (stream as unknown as { destroy?: () => void }).destroy?.();
-        } catch {
-          // ignore
-        }
+      ok: true,
+      handle: {
+        stream,
+        close: () => {
+          try {
+            (stream as unknown as { destroy?: () => void }).destroy?.();
+          } catch {
+            // ignore
+          }
+        },
       },
     };
-  } catch {
-    return null;
+  } catch (e) {
+    return { ok: false, reason: "container", detail: e instanceof Error ? e.message : String(e) };
   }
 }
