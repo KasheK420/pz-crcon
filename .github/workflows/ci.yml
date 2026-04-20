@@ -15,9 +15,6 @@ permissions:
   contents: read
 
 jobs:
-  # Placeholder jobs — will be expanded once tech stack is finalized.
-  # For now they validate the repo structure and enforce hygiene.
-
   lint-markdown:
     name: Lint Markdown
     runs-on: ubuntu-latest
@@ -35,7 +32,7 @@ jobs:
       - name: Install yamllint
         run: pip install yamllint
       - name: Run yamllint
-        run: yamllint -d "{extends: relaxed, rules: {line-length: disable}}" .
+        run: yamllint -d "relaxed" .
 
   validate-structure:
     name: Validate repo structure
@@ -49,7 +46,6 @@ jobs:
             test -f "$f" || { echo "missing: $f"; exit 1; }
           done
           echo "all required files present"
-
       - name: .env is not committed
         run: |
           if git ls-files | grep -E '^\.env$|^\.env\.[^e]' | grep -v '\.env\.example'; then
@@ -57,3 +53,45 @@ jobs:
             exit 1
           fi
           echo "no .env files tracked — good"
+
+  app:
+    name: App (lint, typecheck, test, build)
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: production
+      APP_URL: http://localhost:3000
+      NEXTAUTH_SECRET: "0123456789abcdef0123456789abcdef0"
+      DATABASE_URL: postgresql://x:y@localhost:5432/z
+      DISCORD_CLIENT_ID: ci
+      DISCORD_CLIENT_SECRET: ci
+      DISCORD_GUILD_ID: ci
+      DISCORD_ADMIN_ROLE_ID: ci
+      DISCORD_BOT_TOKEN: ci
+      BOOTSTRAP_OWNER_DISCORD_ID: ci
+      RCON_HOST: 127.0.0.1
+      RCON_PORT: "27015"
+      RCON_PASSWORD: ci
+      WEBHOOK_HMAC_SECRET: "0123456789abcdef0123456789abcdef0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm db:generate
+      - name: Validate Prisma schema
+        run: pnpm db:validate
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+        env:
+          NODE_ENV: test
+      - name: Build
+        run: pnpm build

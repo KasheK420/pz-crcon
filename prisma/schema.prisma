@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MODERATOR
+  VIEWER
+}
+
+enum BackupKind {
+  AUTO
+  MANUAL
+  PRE_RESTART
+  PRE_MOD_UPDATE
+}
+
+model User {
+  id           String        @id @default(cuid())
+  discordId    String        @unique
+  username     String
+  avatar       String?
+  role         UserRole      @default(VIEWER)
+  themePrefs   Json?
+  createdAt    DateTime      @default(now())
+  lastLogin    DateTime?
+  apiTokens    ApiToken[]
+  adminActions AdminAction[]
+}
+
+model Player {
+  id            String    @id @default(cuid())
+  steamId       String    @unique
+  name          String
+  firstSeen     DateTime  @default(now())
+  lastSeen      DateTime  @default(now())
+  totalPlaytime Int       @default(0)
+  deaths        Int       @default(0)
+  isWhitelisted Boolean   @default(false)
+  isBanned      Boolean   @default(false)
+  banReason     String?
+  banExpiresAt  DateTime?
+  banByUserId   String?
+  ipLastSeen    String?
+  countryLast   String?
+  notes         String?
+  lastX         Float?
+  lastY         Float?
+  lastZ         Float?
+  lastRegion    String?
+  lastHealth    Float?
+  lastHunger    Float?
+  lastFatigue   Float?
+  isOnline      Boolean   @default(false)
+  inGameDay     Int?
+  perks         Json?
+
+  events PlayerEvent[]
+}
+
+model PlayerEvent {
+  id         String   @id @default(cuid())
+  playerId   String
+  player     Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  kind       String
+  payload    Json
+  occurredAt DateTime @default(now())
+
+  @@index([playerId, occurredAt])
+}
+
+model Mod {
+  id           String   @id @default(cuid())
+  workshopId   String   @unique
+  modId        String
+  name         String
+  thumbnailUrl String?
+  version      String?
+  enabled      Boolean  @default(true)
+  loadOrder    Int
+  size         BigInt?
+  installedAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Backup {
+  id          String     @id @default(cuid())
+  filename    String     @unique
+  sizeBytes   BigInt
+  kind        BackupKind
+  modCount    Int?
+  createdAt   DateTime   @default(now())
+  createdById String?
+  notes       String?
+}
+
+model AdminAction {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  kind      String
+  target    String?
+  details   Json
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model Schedule {
+  id        String    @id @default(cuid())
+  name      String
+  cronExpr  String
+  kind      String
+  payload   Json
+  enabled   Boolean   @default(true)
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+}
+
+model ApiToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  name       String
+  prefix     String    @unique
+  hash       String
+  scopes     String[]
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+}
+
+model SandboxOverride {
+  id          String    @id @default(cuid())
+  key         String    @unique
+  value       Json
+  setByUserId String?
+  setAt       DateTime  @default(now())
+  appliedAt   DateTime?
+}
+
+model ServerEvent {
+  id         String   @id @default(cuid())
+  kind       String
+  payload    Json
+  occurredAt DateTime @default(now())
+
+  @@index([kind, occurredAt])
+}

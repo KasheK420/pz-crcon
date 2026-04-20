@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pzcrcon_user
+      POSTGRES_PASSWORD: dev_password
+      POSTGRES_DB: pzcrcon
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pz-crcon-pg:/var/lib/postgresql/data
+
+volumes:
+  pz-crcon-pg:
+    name: pz-crcon-pg-dev
