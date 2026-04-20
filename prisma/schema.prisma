@@ -21,6 +21,15 @@ enum BackupKind {
   PRE_MOD_UPDATE
 }
 
+enum AuditKind {
+  CONFIG_WRITE
+  LIFECYCLE_START
+  LIFECYCLE_STOP
+  LIFECYCLE_RESTART
+  LIFECYCLE_FORCE_STOP
+  LIFECYCLE_ABORT
+}
+
 model User {
   id           String        @id @default(cuid())
   discordId    String        @unique
@@ -154,4 +163,15 @@ model ServerEvent {
   occurredAt DateTime @default(now())
 
   @@index([kind, occurredAt])
+}
+
+model AuditEvent {
+  id        String    @id @default(cuid())
+  userId    String
+  kind      AuditKind
+  detail    Json
+  createdAt DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
 }
