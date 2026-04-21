@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth/session";
 import { atLeast } from "@/lib/auth/role";
 import { ConfigTabs } from "@/components/config/config-tabs";
+import { ServerControlsCard } from "@/components/server/server-controls-card";
 import { checkConfigAccess } from "@/lib/pz/access-check";
 
 export const dynamic = "force-dynamic";
@@ -60,10 +61,11 @@ export default async function ConfigPage() {
 
       <div className="bg-pz-bg-1 border border-pz-border-lo px-3 py-2 text-[12px] text-pz-text-dim">
         <strong className="text-pz-text">Tip.</strong> OWNERs can edit both
-        files here; saves are atomic with a per-file <code className="pz-mono">.backups/</code>{" "}
-        snapshot and an optimistic-concurrency mtime check. Most keys require
-        a PZ server restart to take effect — restart controls land in
-        Chunk 5.{" "}
+        files here; saves are atomic with a per-file{" "}
+        <code className="pz-mono">.backups/</code> snapshot and an
+        optimistic-concurrency mtime check. Most keys require a PZ server
+        restart to take effect — after saving, the &quot;Restart now&quot;
+        prompt appears and you can also use the lifecycle controls below.{" "}
         <Link
           href="https://pzwiki.net/wiki/Server_settings"
           target="_blank"
@@ -83,6 +85,10 @@ export default async function ConfigPage() {
         </Link>
         .
       </div>
+
+      {atLeast(session.role, "ADMIN") && (
+        <ServerControlsCard role={session.role} />
+      )}
 
       <ConfigTabs role={session.role} />
     </div>

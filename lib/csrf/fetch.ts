@@ -1,34 +1,43 @@
 "use client";
 
 /**
- * Thin wrapper around `fetch` that reuses the Auth.js CSRF cookie for our
- * admin mutations. Auth.js writes the token under one of three cookie
- * names depending on deployment scheme; we look for whichever is present
- * and forward the raw token (the part before the `|hmac` separator) as
- * the `X-CSRF-Token` header on mutating requests.
- *
- * Server-side validation lives in `lib/csrf/check.ts`.
+ * Thin wrapper around `fetch` that reuses the Auth.js CSRF token for our
+ * admin mutations. Auth.js v5 writes the CSRF cookie as `httpOnly: true`,
+ * so `document.cookie` cannot read it. Instead we fetch the token from
+ * the public `/api/auth/csrf` endpoint (which returns `{ csrfToken }`,
+ * already stripped of the `|hmac` part) and cache it for the tab's
+ * lifetime. The server-side validation in `lib/csrf/check.ts` compares
+ * this header to the cookie's token half.
  */
 
-const COOKIE_NAMES = [
-  "next-auth.csrf-token",
-  "__Secure-next-auth.csrf-token",
-  "__Host-next-auth.csrf-token",
-];
+let cachedToken: string | null = null;
+let inflight: Promise<string | null> | null = null;
 
-function getCsrfToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const parts = document.cookie.split("; ");
-  for (const raw of parts) {
-    for (const name of COOKIE_NAMES) {
-      if (raw.startsWith(`${name}=`)) {
-        const decoded = decodeURIComponent(raw.slice(name.length + 1));
-        // Auth.js stores `token|hmac` — we only send the token half.
-        return decoded.split("|")[0] ?? null;
-      }
+async function fetchCsrfToken(): Promise<string | null> {
+  if (cachedToken) return cachedToken;
+  if (inflight) return inflight;
+  inflight = (async () => {
+    try {
+      const res = await fetch("/api/auth/csrf", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!res.ok) return null;
+      const j = (await res.json()) as { csrfToken?: string };
+      cachedToken = j.csrfToken ?? null;
+      return cachedToken;
+    } catch {
+      return null;
+    } finally {
+      inflight = null;
     }
-  }
-  return null;
+  })();
+  return inflight;
+}
+
+export function _resetCsrfTokenCache(): void {
+  cachedToken = null;
+  inflight = null;
 }
 
 export async function csrfFetch(
@@ -43,11 +52,21 @@ export async function csrfFetch(
     method === "DELETE";
   const headers = new Headers(init.headers);
   if (mutating) {
-    const token = getCsrfToken();
+    const token = await fetchCsrfToken();
     if (token) headers.set("X-CSRF-Token", token);
     if (init.body !== undefined && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
   }
-  return fetch(input, { ...init, headers, credentials: "same-origin" });
+  const res = await fetch(input, {
+    ...init,
+    headers,
+    credentials: "same-origin",
+  });
+  // If the server rejected us due to a stale/rotated token, drop the
+  // cache once so the next mutation re-fetches a fresh one.
+  if (mutating && res.status === 403) {
+    cachedToken = null;
+  }
+  return res;
 }

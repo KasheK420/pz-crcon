@@ -125,7 +125,9 @@ pz-mods-cache/
 *.sqlite3
 *.db
 backups/
-logs/
+# Runtime log directory at the repo root only — do NOT match
+# `app/(admin)/admin/logs/` or `components/logs/` source folders.
+/logs/
 
 # ============================================================
 # Test / coverage outputs
