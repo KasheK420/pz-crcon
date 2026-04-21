@@ -60,6 +60,14 @@ vi.mock("@/lib/pz/writer", () => ({
   registerLifecyclePhaseGetter: () => {},
 }));
 
+const snapshotPzConfigMock = vi.fn();
+const restorePzConfigMock = vi.fn();
+
+vi.mock("@/lib/pz/snapshot", () => ({
+  snapshotPzConfig: () => snapshotPzConfigMock(),
+  restorePzConfig: (s: unknown) => restorePzConfigMock(s),
+}));
+
 type PublishedPhase = { phase: string; detail?: string };
 
 function phases(): PublishedPhase[] {
@@ -80,6 +88,13 @@ beforeEach(() => {
   servermsgMock.mockReset();
   saveWorldMock.mockReset();
   quitServerMock.mockReset();
+  snapshotPzConfigMock.mockReset();
+  restorePzConfigMock.mockReset();
+
+  // Snapshot/restore are best-effort side-channels; default to no-op
+  // so the lifecycle flow can proceed.
+  snapshotPzConfigMock.mockResolvedValue({ prefix: "test" });
+  restorePzConfigMock.mockResolvedValue({});
 
   // Sensible happy-path defaults — individual tests override.
   isProxyReachableMock.mockResolvedValue(true);

@@ -38,6 +38,11 @@ import {
   waitForState,
 } from "@/lib/docker/control";
 import { registerLifecyclePhaseGetter } from "@/lib/pz/writer";
+import {
+  restorePzConfig,
+  snapshotPzConfig,
+  type PzConfigSnapshot,
+} from "@/lib/pz/snapshot";
 import { getLogger } from "@/lib/logger";
 
 const log = () => getLogger().child({ mod: "lifecycle" });
@@ -112,33 +117,48 @@ async function warningCountdown(seconds: number): Promise<void> {
   }
 }
 
-async function announceRestart(seconds: number, reason = "config reload"): Promise<void> {
+async function announce(
+  kind: "restart" | "stop",
+  seconds: number,
+  reason = "config reload",
+): Promise<void> {
   try {
-    await servermsg(
-      `Server restarting in ${seconds}s (${reason}). Please log out.`,
-    );
+    if (kind === "restart") {
+      await servermsg(
+        `Server restarting in ${seconds}s (${reason}). Please log out.`,
+      );
+    } else {
+      await servermsg(`Server stopping in ${seconds}s. Please log out.`);
+    }
   } catch {
     // RCON may already be down — continue with the rest of the flow.
   }
 }
 
-async function announceStop(seconds: number): Promise<void> {
-  try {
-    await servermsg(`Server stopping in ${seconds}s. Please log out.`);
-  } catch {
-    // ignore
-  }
-}
-
 /**
- * Graceful stop path: warn → save → quit → wait exited → fallback
- * stop/kill. Shared by `gracefulRestart` and `gracefulStop`; throws
- * if the warning phase is aborted.
+ * Graceful stop path: warn → snapshot config → save → quit → wait
+ * exited → fallback stop/kill → restore config. Shared by
+ * `gracefulRestart` and `gracefulStop`; throws if the warning phase
+ * is aborted.
+ *
+ * The config snapshot+restore dance is critical: PZ writes
+ * `<prefix>.ini` and `<prefix>_SandboxVars.lua` back from its
+ * in-memory state on RCON `save`/`quit` and on shutdown signals.
+ * Without this dance, any FS-level edit the admin made while the
+ * server was running would be silently reverted when they clicked
+ * Restart. See `lib/pz/snapshot.ts` for details.
  */
-async function gracefulShutdownSequence(warningSeconds: number): Promise<void> {
+async function gracefulShutdownSequence(
+  warningSeconds: number,
+  kind: "restart" | "stop" = "restart",
+): Promise<PzConfigSnapshot> {
   emit("warning", `${warningSeconds}s`);
-  await announceRestart(warningSeconds);
+  await announce(kind, warningSeconds);
   await warningCountdown(warningSeconds);
+
+  // Snapshot right before PZ gets any chance to persist its memory
+  // back over our files. The edited bytes are already on disk.
+  const snap = await snapshotPzConfig();
 
   emit("saving");
   const saveRes = await saveWorld(120_000);
@@ -156,6 +176,21 @@ async function gracefulShutdownSequence(warningSeconds: number): Promise<void> {
     const stopped2 = await waitForState("exited", 35_000);
     if (!stopped2) await killPz();
   }
+
+  // PZ is now definitely not running. Put our config back over
+  // whatever it may have left behind on shutdown.
+  try {
+    const out = await restorePzConfig(snap);
+    if (out.ini?.clobbered || out.sandbox?.clobbered) {
+      emit("stopping", "config-restored");
+    }
+  } catch (e) {
+    log().error(
+      { err: e instanceof Error ? e.message : String(e) },
+      "config restore after shutdown failed",
+    );
+  }
+  return snap;
 }
 
 /**
@@ -203,6 +238,10 @@ export async function gracefulRestart(warningSeconds = 30): Promise<void> {
 
 /**
  * Graceful stop — same as restart but without the re-start step.
+ * Reuses `gracefulShutdownSequence` so the snapshot+restore of the
+ * PZ config files is applied identically (otherwise an admin who
+ * edited config and then hit Stop would lose their edits on the
+ * next manual Start).
  */
 export async function gracefulStop(warningSeconds = 30): Promise<void> {
   if (!(await isProxyReachable())) throw new ProxyUnreachableError();
@@ -216,26 +255,10 @@ export async function gracefulStop(warningSeconds = 30): Promise<void> {
         emit("idle");
         return;
       }
-      emit("warning", `${warningSeconds}s`);
-      await announceStop(warningSeconds);
-      await warningCountdown(warningSeconds);
-
-      emit("saving");
-      const saveRes = await saveWorld(120_000);
-      if (!saveRes.ok) emit("saving", "save-timeout-proceeding");
-
-      emit("stopping");
-      try {
-        await quitServer();
-      } catch {
-        // ignore
-      }
-      const exited = await waitForState("exited", 90_000);
-      if (!exited) {
-        await stopPz(30);
-        const stopped2 = await waitForState("exited", 35_000);
-        if (!stopped2) await killPz();
-      }
+      // The restart path wraps the shutdown in a snapshot+restore
+      // cycle; stop has the same requirement so that subsequent
+      // starts (manual or via lifecycle) read the edited config.
+      await gracefulShutdownSequence(warningSeconds, "stop");
       emit("idle");
     } catch (e) {
       emit("idle", `error ${e instanceof Error ? e.message : String(e)}`);

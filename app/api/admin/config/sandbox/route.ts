@@ -48,6 +48,9 @@ export async function GET() {
 const PutBody = z.object({
   clientMtimeMs: z.number(),
   patch: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
+  priorValues: z
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+    .optional(),
 });
 
 function statusForCode(code: WriteFailureCode): number {
@@ -105,6 +108,7 @@ export async function PUT(req: NextRequest) {
 
   const result = await writeSandboxVars(body.data.patch, {
     clientMtimeMs: body.data.clientMtimeMs,
+    priorValues: body.data.priorValues,
   });
   if (!result.ok) {
     log().warn(

@@ -64,6 +64,14 @@ export async function GET() {
 const PutBody = z.object({
   clientMtimeMs: z.number(),
   patch: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
+  /**
+   * Optional per-key baseline (what the client saw at load time).
+   * Enables the writer's three-way merge so PZ rewriting the file
+   * on disk doesn't cause spurious mtime-race errors.
+   */
+  priorValues: z
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+    .optional(),
 });
 
 function statusForCode(code: WriteFailureCode): number {
@@ -121,6 +129,7 @@ export async function PUT(req: NextRequest) {
 
   const result = await writeServerIni(body.data.patch, {
     clientMtimeMs: body.data.clientMtimeMs,
+    priorValues: body.data.priorValues,
   });
   if (!result.ok) {
     log().warn(

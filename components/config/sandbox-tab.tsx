@@ -137,11 +137,19 @@ export function SandboxTab({ role }: Props) {
     setSaveError(null);
     try {
       const patch = buffer.buildPatch();
+      // Baseline values for the server's three-way merge; see
+      // lib/pz/writer.ts for how `priorValues` is consumed.
+      const priorValues: Record<string, ConfigValue> = {};
+      for (const k of Object.keys(patch)) {
+        const v = buffer.serverValues[k];
+        if (v !== undefined) priorValues[k] = v;
+      }
       const res = await csrfFetch("/api/admin/config/sandbox", {
         method: "PUT",
         body: JSON.stringify({
           clientMtimeMs: buffer.mtimeMs,
           patch,
+          priorValues,
         }),
       });
       const j = (await res.json()) as {
@@ -151,9 +159,29 @@ export function SandboxTab({ role }: Props) {
         diff?: DiffEntry[];
         newMtimeMs?: number;
         requiresRestart?: boolean;
+        conflicts?: Array<{
+          path: string;
+          prior: unknown;
+          patch: unknown;
+          disk: unknown;
+        }>;
       };
       if (!res.ok || !j.ok) {
-        setSaveError(`${j.code ?? res.status}${j.detail ? `: ${j.detail}` : ""}`);
+        if (res.status === 409 && j.code === "mtime-race" && j.conflicts?.length) {
+          const lines = j.conflicts
+            .map(
+              (c) =>
+                `  • ${c.path}: disk=${String(c.disk)} (you had ${String(c.prior)}, wanted ${String(c.patch)})`,
+            )
+            .join("\n");
+          setSaveError(
+            `mtime-race: ${j.conflicts.length} key(s) changed on disk since you loaded:\n${lines}\nRefresh and re-apply.`,
+          );
+        } else {
+          setSaveError(
+            `${j.code ?? res.status}${j.detail ? `: ${j.detail}` : ""}`,
+          );
+        }
         if (res.status === 409) await reload();
         return;
       }
@@ -236,7 +264,7 @@ export function SandboxTab({ role }: Props) {
           </span>
         </div>
         {saveError && (
-          <div className="p-2 bg-pz-danger/20 text-pz-danger text-xs border-b border-pz-border-lo">
+          <div className="p-2 bg-pz-danger/20 text-pz-danger text-xs border-b border-pz-border-lo pz-mono whitespace-pre-wrap">
             save failed: {saveError}
           </div>
         )}

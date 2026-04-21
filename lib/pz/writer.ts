@@ -10,16 +10,32 @@
  *   3. Acquire the module-level mutex (single writer at a time across
  *      both files).
  *   4. Validate the patch against descriptor-driven Zod schemas.
- *   5. Re-read the current file. If the caller's `clientMtimeMs` doesn't
- *      match the file's current mtime (rounded to the second), reject as
- *      `mtime-race`.
+ *   5. Re-read the current file. Mtime-race check:
+ *        - If the caller's `clientMtimeMs` matches disk mtime (sec
+ *          resolution) we trust the patch and proceed.
+ *        - If mtimes differ AND the caller supplied `priorValues`
+ *          (the per-key baseline the client saw at load time), we do
+ *          a three-way merge: for each key in the patch compare the
+ *          current disk value to `priorValues[k]`. Keys whose disk
+ *          value already equals the patch value are dropped as no-ops.
+ *          If the remaining keys all have disk === prior, PZ/another
+ *          admin didn't touch them and we proceed with the reduced
+ *          patch. Otherwise the mismatched keys are returned as
+ *          `conflicts` with code `mtime-race`.
+ *        - If mtimes differ and no `priorValues` were supplied we
+ *          keep the old strict behaviour (`mtime-race` without
+ *          conflict list) for back-compat.
+ *      PZ routinely rewrites the ini/sandbox files on disk even when
+ *      nothing semantic changed (servername echo, backup flush,
+ *      admin-command persist), so the three-way merge is what makes
+ *      the UX tolerable on a live server.
  *   6. Serialize — `serialize-ini` (line-based) for server.ini, offset-
  *      based for SandboxVars.
  *   7. Copy the old file into `.backups/<name>.bak-<iso>` before touching
  *      the original; prune to newest 10 per original-name.
  *   8. Atomic write: write to `.<name>.tmp-<rand>` in the same directory,
  *      fsync, rename over the original.
- *   9. Return `{ ok: true, diff, newMtimeMs, backupPath }`.
+ *   9. Return `{ ok: true, diff, newMtimeMs, backupPath, droppedKeys? }`.
  *
  * `registerLifecyclePhaseGetter()` is used by the lifecycle module (Chunk 5)
  * to feed its current phase string into the writer without a circular
@@ -91,19 +107,54 @@ export interface WriteDiffEntry {
   to: unknown;
 }
 
+export interface MtimeConflict {
+  path: string;
+  /** Value the client thought was there when it loaded the config. */
+  prior: unknown;
+  /** Value the client wanted to write. */
+  patch: unknown;
+  /** Value currently on disk (differs from `prior`). */
+  disk: unknown;
+}
+
 export type WriteOutcome =
   | {
       ok: true;
       diff: WriteDiffEntry[];
       newMtimeMs: number;
       backupPath: string;
+      /**
+       * Keys that were in the patch but already matched disk (no-ops
+       * that we silently dropped). Empty/absent means the write used
+       * the patch as-is. Populated only via the three-way merge path.
+       */
+      droppedKeys?: string[];
     }
   | {
       ok: false;
       code: WriteFailureCode;
       detail: string;
       errors?: Array<{ path: string; code: string; message: string }>;
+      /**
+       * Per-key disagreement list when `code === "mtime-race"` and the
+       * caller supplied `priorValues`. Absent when the client sent no
+       * baseline or when the conflict is purely an mtime mismatch with
+       * no actionable per-key data.
+       */
+      conflicts?: MtimeConflict[];
     };
+
+export interface WriteOpts {
+  clientMtimeMs: number;
+  /**
+   * Per-key baseline values the client had in memory when it built
+   * this patch (pre-edit, as returned by the last GET). Used by the
+   * three-way merge logic to decide whether an mtime drift is safe
+   * to ignore. Optional — if omitted the writer falls back to the
+   * strict mtime check.
+   */
+  priorValues?: Record<string, string | number | boolean>;
+}
 
 async function ensureBackupsDir(): Promise<void> {
   await mkdir(backupDir(), { recursive: true });
@@ -162,11 +213,70 @@ function ensureReady(): WriteOutcome | null {
   return null;
 }
 
+/** Normalise values the way a user-typed patch would produce before
+ * comparing them. PZ persists booleans as the strings `"true"`/`"false"`
+ * and numbers may round-trip as decimals even when the descriptor is
+ * `int`, so a loose-equality compare here is deliberately tolerant. */
+function valuesEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  if (typeof a === "boolean" || typeof b === "boolean") {
+    return String(a).toLowerCase() === String(b).toLowerCase();
+  }
+  if (typeof a === "number" || typeof b === "number") {
+    const an = Number(a);
+    const bn = Number(b);
+    if (Number.isFinite(an) && Number.isFinite(bn)) return an === bn;
+  }
+  return String(a) === String(b);
+}
+
+/**
+ * Three-way merge between the caller's snapshot (`priorValues`), the
+ * fresh on-disk state (`diskValues`) and the write target (`patch`):
+ *
+ *   - disk already equals patch         → drop key (no-op, PZ or
+ *                                          someone else already did it)
+ *   - disk equals prior                 → safe to write (nobody else
+ *                                          changed this key since load)
+ *   - disk differs from both            → conflict; caller must resolve
+ *
+ * Returns the pruned patch and any conflicts. The caller only proceeds
+ * with the write when `conflicts` is empty.
+ */
+function mergePatchAgainstDisk(
+  patch: Record<string, string | number | boolean>,
+  diskValues: Record<string, unknown>,
+  priorValues: Record<string, string | number | boolean>,
+): {
+  mergedPatch: Record<string, string | number | boolean>;
+  droppedKeys: string[];
+  conflicts: MtimeConflict[];
+} {
+  const mergedPatch: Record<string, string | number | boolean> = {};
+  const droppedKeys: string[] = [];
+  const conflicts: MtimeConflict[] = [];
+  for (const [k, to] of Object.entries(patch)) {
+    const disk = diskValues[k];
+    if (valuesEqual(disk, to)) {
+      droppedKeys.push(k);
+      continue;
+    }
+    const prior = priorValues[k];
+    if (prior !== undefined && valuesEqual(disk, prior)) {
+      mergedPatch[k] = to;
+      continue;
+    }
+    conflicts.push({ path: k, prior, patch: to, disk });
+  }
+  return { mergedPatch, droppedKeys, conflicts };
+}
+
 // ---------- INI ----------
 
 export async function writeServerIni(
   patch: Record<string, string | number | boolean>,
-  opts: { clientMtimeMs: number },
+  opts: WriteOpts,
 ): Promise<WriteOutcome> {
   if (Object.keys(patch).length === 0) {
     return { ok: false, code: "empty-patch", detail: "no keys in patch" };
@@ -175,7 +285,6 @@ export async function writeServerIni(
   if (notReady) return notReady;
 
   return writeMutex.runExclusive(async () => {
-    // 1. Validate.
     const v = validateIniPatch(patch);
     if (!v.ok) {
       return {
@@ -186,7 +295,6 @@ export async function writeServerIni(
       };
     }
 
-    // 2. Read current.
     let current: ServerIniResult;
     try {
       current = await readServerIni();
@@ -205,26 +313,55 @@ export async function writeServerIni(
       };
     }
 
-    // 3. mtime check (second-resolution to tolerate FS rounding).
-    if (Math.floor(current.mtimeMs / 1000) !== Math.floor(opts.clientMtimeMs / 1000)) {
-      return {
-        ok: false,
-        code: "mtime-race",
-        detail: `client mtime ${opts.clientMtimeMs} != disk ${current.mtimeMs}`,
-      };
+    let effectivePatch = patch;
+    let droppedKeys: string[] = [];
+    const mtimeDrift =
+      Math.floor(current.mtimeMs / 1000) !==
+      Math.floor(opts.clientMtimeMs / 1000);
+    if (mtimeDrift) {
+      if (!opts.priorValues) {
+        return {
+          ok: false,
+          code: "mtime-race",
+          detail: `client mtime ${opts.clientMtimeMs} != disk ${current.mtimeMs}`,
+        };
+      }
+      const merge = mergePatchAgainstDisk(
+        patch,
+        current.parsed?.map ?? {},
+        opts.priorValues,
+      );
+      if (merge.conflicts.length > 0) {
+        return {
+          ok: false,
+          code: "mtime-race",
+          detail: `client mtime ${opts.clientMtimeMs} != disk ${current.mtimeMs}; ${merge.conflicts.length} key(s) changed on disk`,
+          conflicts: merge.conflicts,
+        };
+      }
+      effectivePatch = merge.mergedPatch;
+      droppedKeys = merge.droppedKeys;
+      if (Object.keys(effectivePatch).length === 0) {
+        // Everything the user wanted was already on disk.
+        return {
+          ok: true,
+          diff: [],
+          newMtimeMs: current.mtimeMs,
+          backupPath: "",
+          droppedKeys,
+        };
+      }
     }
 
-    // 4. Diff (from vs to).
     const diff: WriteDiffEntry[] = [];
     const prevMap = current.parsed?.map ?? {};
-    for (const [k, to] of Object.entries(patch)) {
+    for (const [k, to] of Object.entries(effectivePatch)) {
       diff.push({ path: k, from: prevMap[k], to });
     }
 
-    // 5. Serialize.
     let newRaw: string;
     try {
-      newRaw = serializeIni(current.raw, patch);
+      newRaw = serializeIni(current.raw, effectivePatch);
     } catch (e) {
       return {
         ok: false,
@@ -233,7 +370,6 @@ export async function writeServerIni(
       };
     }
 
-    // 6. Backup, then atomic write.
     let backupPath: string;
     try {
       backupPath = await backup(current.path);
@@ -254,7 +390,13 @@ export async function writeServerIni(
       };
     }
     const s = await stat(current.path);
-    return { ok: true, diff, newMtimeMs: s.mtimeMs, backupPath };
+    return {
+      ok: true,
+      diff,
+      newMtimeMs: s.mtimeMs,
+      backupPath,
+      droppedKeys: droppedKeys.length > 0 ? droppedKeys : undefined,
+    };
   });
 }
 
@@ -262,7 +404,7 @@ export async function writeServerIni(
 
 export async function writeSandboxVars(
   patch: Record<string, string | number | boolean>,
-  opts: { clientMtimeMs: number },
+  opts: WriteOpts,
 ): Promise<WriteOutcome> {
   if (Object.keys(patch).length === 0) {
     return { ok: false, code: "empty-patch", detail: "no keys in patch" };
@@ -299,28 +441,58 @@ export async function writeSandboxVars(
       };
     }
 
-    if (Math.floor(current.mtimeMs / 1000) !== Math.floor(opts.clientMtimeMs / 1000)) {
-      return {
-        ok: false,
-        code: "mtime-race",
-        detail: `client mtime ${opts.clientMtimeMs} != disk ${current.mtimeMs}`,
-      };
+    let effectivePatch = patch;
+    let droppedKeys: string[] = [];
+    const mtimeDrift =
+      Math.floor(current.mtimeMs / 1000) !==
+      Math.floor(opts.clientMtimeMs / 1000);
+    if (mtimeDrift) {
+      if (!opts.priorValues) {
+        return {
+          ok: false,
+          code: "mtime-race",
+          detail: `client mtime ${opts.clientMtimeMs} != disk ${current.mtimeMs}`,
+        };
+      }
+      const merge = mergePatchAgainstDisk(
+        patch,
+        current.parsed?.flat ?? {},
+        opts.priorValues,
+      );
+      if (merge.conflicts.length > 0) {
+        return {
+          ok: false,
+          code: "mtime-race",
+          detail: `client mtime ${opts.clientMtimeMs} != disk ${current.mtimeMs}; ${merge.conflicts.length} key(s) changed on disk`,
+          conflicts: merge.conflicts,
+        };
+      }
+      effectivePatch = merge.mergedPatch;
+      droppedKeys = merge.droppedKeys;
+      if (Object.keys(effectivePatch).length === 0) {
+        return {
+          ok: true,
+          diff: [],
+          newMtimeMs: current.mtimeMs,
+          backupPath: "",
+          droppedKeys,
+        };
+      }
     }
 
     const diff: WriteDiffEntry[] = [];
     const prevFlat = current.parsed?.flat ?? {};
-    for (const [k, to] of Object.entries(patch)) {
+    for (const [k, to] of Object.entries(effectivePatch)) {
       diff.push({ path: k, from: prevFlat[k], to });
     }
 
     let newRaw: string;
     try {
-      newRaw = serializeSandboxLua(current.raw, patch);
+      newRaw = serializeSandboxLua(current.raw, effectivePatch);
     } catch (e) {
       if (e instanceof UnknownSandboxKeyError) {
         return { ok: false, code: "unknown-key", detail: e.message };
       }
-      // Unexpected error from serializer treated as shape unsupported.
       return {
         ok: false,
         code: "serialize-shape-unsupported",
@@ -348,6 +520,12 @@ export async function writeSandboxVars(
       };
     }
     const s = await stat(current.path);
-    return { ok: true, diff, newMtimeMs: s.mtimeMs, backupPath };
+    return {
+      ok: true,
+      diff,
+      newMtimeMs: s.mtimeMs,
+      backupPath,
+      droppedKeys: droppedKeys.length > 0 ? droppedKeys : undefined,
+    };
   });
 }
