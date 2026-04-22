@@ -59,6 +59,51 @@ is up.
 
 ## 2. One-time HomePL bootstrap
 
+### 2.0 Prerequisites on the PZ server host
+
+`pz-crcon` shares the `pz-data` docker volume with the `pz-server`
+container so both see the same `Saves/`, `Server/`, `Workshop/`, etc.
+Two hostside steps are required for the shared volume to actually be
+shared and for all features (wipe world, config editor, console attach)
+to work.
+
+**(a) Unify volume ownership to `1000:1000`.** The upstream
+`renegademaster/zomboid-dedicated-server` image initialises some paths
+as `root:root` and others as `botdev` (uid 1000). `pz-crcon` runs as
+`user: "1000:1000"` and needs write access to everything under the
+volume (to rename a world into `.trash-*` for "Wipe world", to write
+config via the editor, etc.). Without this, the Wipe button surfaces
+a `data-path-not-writable` error and config edits fall back to
+`config-dir-unreachable`.
+
+Apply it once, on the PZ host:
+
+```bash
+# stop pz-server first so PZ doesn't race the chown
+docker stop pz-server
+chown -R 1000:1000 /var/lib/docker/volumes/pz-data/_data
+docker start pz-server
+```
+
+Ownership is preserved for all writes made by PZ after this, since the
+in-container `botdev` user is also uid 1000.
+
+**(b) Enable TTY + stdin on the `pz-server` service.** Without
+`tty: true` + `stdin_open: true`, the Portainer "Console → Attach"
+screen for `pz-server` shows an empty tty and can't send RCON
+commands. Edit `/opt/docker/projectzomboid/docker-compose.yml` and add
+those two keys under the `pz-server` service. A restart is not needed
+immediately — the change takes effect on the next `docker compose
+up -d`.
+
+```yaml
+services:
+  pz-server:
+    # ... existing config ...
+    tty: true
+    stdin_open: true
+```
+
 ### 2.1 Create the project directory
 
 ```bash
@@ -304,6 +349,32 @@ The shared Postgres container may have rejected the connection — check
 that `DATABASE_URL` uses the docker DNS name **`shared-postgres`**, not
 `localhost`. Verify by exec-ing into the app container and running
 `pg_isready -h shared-postgres -p 5432`.
+
+### "Wipe world" fails with `data-path-not-writable`
+
+Classic symptom of section 2.0(a) having been skipped: the `pz-data`
+volume has some directories owned by `root:root`, so the container
+user (uid 1000) can't create the `.trash-*` sibling during rename.
+Fix on the PZ host (stop the server, chown, start):
+
+```bash
+docker stop pz-server
+chown -R 1000:1000 /var/lib/docker/volumes/pz-data/_data
+docker start pz-server
+```
+
+Same fix applies when config edits surface `config-dir-unreachable`
+in `/admin/logs` — the writer calls `fs.access(W_OK)` on the config
+dir at startup and caches the result.
+
+### Portainer "Attach Console" on `pz-server` is blank
+
+Upstream image needs a TTY. Add `tty: true` + `stdin_open: true` to
+the `pz-server` service in
+`/opt/docker/projectzomboid/docker-compose.yml`, then
+`docker compose up -d pz-server` on the PZ host. Confirm with
+`docker inspect pz-server --format '{{.Config.Tty}} {{.Config.OpenStdin}}'`
+— both must report `true`.
 
 ### Watchtower didn't pick up the new image
 
