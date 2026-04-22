@@ -22,11 +22,13 @@ const gracefulStopMock = vi.fn();
 const startIfStoppedMock = vi.fn();
 const forceStopMock = vi.fn();
 const abortCurrentMock = vi.fn();
+const resetWorldMock = vi.fn();
 const getPhaseMock = vi.fn();
 const getDetailMock = vi.fn();
 const inspectPzMock = vi.fn();
 const isProxyReachableMock = vi.fn();
 const rconPingMock = vi.fn();
+const detectServerPrefixMock = vi.fn();
 
 class LifecycleBusyError extends Error {
   code = "lifecycle-busy" as const;
@@ -42,6 +44,15 @@ class ProxyUnreachableError extends Error {
     this.name = "ProxyUnreachableError";
   }
 }
+class WorldResetFailedError extends Error {
+  name = "WorldResetFailedError";
+  constructor(
+    public readonly code: string,
+    public readonly detail: string,
+  ) {
+    super(`world-reset failed: ${code} — ${detail}`);
+  }
+}
 
 vi.mock("@/lib/auth/session", () => ({
   getSession: () => sessionMock(),
@@ -55,10 +66,12 @@ vi.mock("@/lib/server/lifecycle", () => ({
   startIfStopped: () => startIfStoppedMock(),
   forceStop: () => forceStopMock(),
   abortCurrent: () => abortCurrentMock(),
+  resetWorld: (mode: "world" | "total-nuke", s: number) => resetWorldMock(mode, s),
   getPhase: () => getPhaseMock(),
   getDetail: () => getDetailMock(),
   LifecycleBusyError,
   ProxyUnreachableError,
+  WorldResetFailedError,
 }));
 vi.mock("@/lib/docker/control", () => ({
   inspectPz: () => inspectPzMock(),
@@ -70,6 +83,10 @@ vi.mock("@/lib/rcon/server-commands", () => ({
 vi.mock("@/lib/rcon/client", () => ({
   getFirstConnectAt: () => null,
   rconExecute: () => Promise.resolve(""),
+}));
+
+vi.mock("@/lib/pz/config-reader", () => ({
+  detectServerPrefix: () => detectServerPrefixMock(),
 }));
 vi.mock("@/lib/logger", () => ({
   getLogger: () => ({
@@ -132,6 +149,10 @@ async function loadState() {
   return import("@/app/api/admin/server/state/route");
 }
 
+async function loadResetWorld() {
+  return import("@/app/api/admin/server/reset-world/route");
+}
+
 beforeEach(() => {
   sessionMock.mockReset();
   auditMock.mockReset();
@@ -140,11 +161,13 @@ beforeEach(() => {
   startIfStoppedMock.mockReset();
   forceStopMock.mockReset();
   abortCurrentMock.mockReset();
+  resetWorldMock.mockReset();
   getPhaseMock.mockReset();
   getDetailMock.mockReset();
   inspectPzMock.mockReset();
   isProxyReachableMock.mockReset();
   rconPingMock.mockReset();
+  detectServerPrefixMock.mockReset();
   vi.resetModules();
 });
 
@@ -247,6 +270,130 @@ describe("POST /api/admin/server/restart", () => {
     expect(res.status).toBe(200);
     expect(gracefulRestartMock).toHaveBeenCalledWith(30);
     expect(auditMock.mock.calls[0]![1]).toBe("LIFECYCLE_RESTART");
+  });
+});
+
+describe("POST /api/admin/server/reset-world", () => {
+  it("rejects ADMIN with 403 (OWNER-only)", async () => {
+    sessionMock.mockResolvedValue(ADMIN);
+    detectServerPrefixMock.mockResolvedValue("MajorlukPZ");
+    const { POST } = await loadResetWorld();
+    const res = await POST(
+      makeReq({
+        url: "http://localhost/api/admin/server/reset-world",
+        body: { mode: "world", confirmPrefix: "MajorlukPZ" },
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(resetWorldMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing CSRF with 403", async () => {
+    sessionMock.mockResolvedValue(OWNER);
+    detectServerPrefixMock.mockResolvedValue("MajorlukPZ");
+    const { POST } = await loadResetWorld();
+    const res = await POST(
+      makeReq({
+        url: "http://localhost/api/admin/server/reset-world",
+        body: { mode: "world", confirmPrefix: "MajorlukPZ" },
+        csrfHeader: null,
+      }),
+    );
+    expect(res.status).toBe(403);
+    const j = await res.json();
+    expect(j.code).toBe("csrf");
+    expect(resetWorldMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects confirmPrefix mismatch with 403", async () => {
+    sessionMock.mockResolvedValue(OWNER);
+    detectServerPrefixMock.mockResolvedValue("MajorlukPZ");
+    const { POST } = await loadResetWorld();
+    const res = await POST(
+      makeReq({
+        url: "http://localhost/api/admin/server/reset-world",
+        body: { mode: "world", confirmPrefix: "OtherServer" },
+      }),
+    );
+    expect(res.status).toBe(403);
+    const j = await res.json();
+    expect(j.code).toBe("confirm-mismatch");
+    expect(resetWorldMock).not.toHaveBeenCalled();
+  });
+
+  it("maps LifecycleBusyError to 409", async () => {
+    sessionMock.mockResolvedValue(OWNER);
+    detectServerPrefixMock.mockResolvedValue("MajorlukPZ");
+    resetWorldMock.mockRejectedValue(new LifecycleBusyError());
+    const { POST } = await loadResetWorld();
+    const res = await POST(
+      makeReq({
+        url: "http://localhost/api/admin/server/reset-world",
+        body: { mode: "world", confirmPrefix: "MajorlukPZ" },
+      }),
+    );
+    expect(res.status).toBe(409);
+    const j = await res.json();
+    expect(j.code).toBe("lifecycle-busy");
+  });
+
+  it("maps ProxyUnreachableError to 503", async () => {
+    sessionMock.mockResolvedValue(OWNER);
+    detectServerPrefixMock.mockResolvedValue("MajorlukPZ");
+    resetWorldMock.mockRejectedValue(new ProxyUnreachableError());
+    const { POST } = await loadResetWorld();
+    const res = await POST(
+      makeReq({
+        url: "http://localhost/api/admin/server/reset-world",
+        body: { mode: "world", confirmPrefix: "MajorlukPZ" },
+      }),
+    );
+    expect(res.status).toBe(503);
+    const j = await res.json();
+    expect(j.code).toBe("proxy-unreachable");
+  });
+
+  it("maps WorldResetFailedError to 422", async () => {
+    sessionMock.mockResolvedValue(OWNER);
+    detectServerPrefixMock.mockResolvedValue("MajorlukPZ");
+    resetWorldMock.mockRejectedValue(
+      new WorldResetFailedError("rename-failed", "boom"),
+    );
+    const { POST } = await loadResetWorld();
+    const res = await POST(
+      makeReq({
+        url: "http://localhost/api/admin/server/reset-world",
+        body: { mode: "world", confirmPrefix: "MajorlukPZ" },
+      }),
+    );
+    expect(res.status).toBe(422);
+    const j = await res.json();
+    expect(j.code).toBe("rename-failed");
+    expect(j.detail).toBe("boom");
+  });
+
+  it("calls resetWorld and audits on success for OWNER", async () => {
+    sessionMock.mockResolvedValue(OWNER);
+    detectServerPrefixMock.mockResolvedValue("MajorlukPZ");
+    resetWorldMock.mockResolvedValue({
+      ok: true,
+      mode: "world",
+      prefix: "MajorlukPZ",
+      trashed: [],
+      pruned: [],
+    });
+    const { POST } = await loadResetWorld();
+    const res = await POST(
+      makeReq({
+        url: "http://localhost/api/admin/server/reset-world",
+        body: { mode: "world", confirmPrefix: "MajorlukPZ" },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const j = await res.json();
+    expect(j.ok).toBe(true);
+    expect(resetWorldMock).toHaveBeenCalledWith("world", 30);
+    expect(auditMock).toHaveBeenCalledOnce();
   });
 });
 

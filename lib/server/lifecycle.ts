@@ -43,6 +43,7 @@ import {
   snapshotPzConfig,
   type PzConfigSnapshot,
 } from "@/lib/pz/snapshot";
+import { wipeWorld, type ResetMode, type WipeResult } from "@/lib/pz/world-reset";
 import { getLogger } from "@/lib/logger";
 
 const log = () => getLogger().child({ mod: "lifecycle" });
@@ -148,21 +149,43 @@ async function announce(
  * server was running would be silently reverted when they clicked
  * Restart. See `lib/pz/snapshot.ts` for details.
  */
+interface ShutdownOpts {
+  kind?: "restart" | "stop";
+  /**
+   * Skip the RCON `save` step. Used by the world-reset path where
+   * persisting the current world is pointless (we're about to delete
+   * it) and actively harmful (save can take minutes on large worlds
+   * and we want the wipe window to be as short as possible).
+   */
+  skipSave?: boolean;
+  /**
+   * Custom announcement reason injected into the restart/stop
+   * servermsg. Falls back to "config reload" for restart and the
+   * stock phrasing for stop.
+   */
+  reason?: string;
+}
+
 async function gracefulShutdownSequence(
   warningSeconds: number,
-  kind: "restart" | "stop" = "restart",
+  opts: ShutdownOpts = {},
 ): Promise<PzConfigSnapshot> {
+  const kind = opts.kind ?? "restart";
   emit("warning", `${warningSeconds}s`);
-  await announce(kind, warningSeconds);
+  await announce(kind, warningSeconds, opts.reason);
   await warningCountdown(warningSeconds);
 
   // Snapshot right before PZ gets any chance to persist its memory
   // back over our files. The edited bytes are already on disk.
   const snap = await snapshotPzConfig();
 
-  emit("saving");
-  const saveRes = await saveWorld(120_000);
-  if (!saveRes.ok) emit("saving", "save-timeout-proceeding");
+  if (!opts.skipSave) {
+    emit("saving");
+    const saveRes = await saveWorld(120_000);
+    if (!saveRes.ok) emit("saving", "save-timeout-proceeding");
+  } else {
+    emit("saving", "skipped");
+  }
 
   emit("stopping");
   try {
@@ -258,7 +281,7 @@ export async function gracefulStop(warningSeconds = 30): Promise<void> {
       // The restart path wraps the shutdown in a snapshot+restore
       // cycle; stop has the same requirement so that subsequent
       // starts (manual or via lifecycle) read the edited config.
-      await gracefulShutdownSequence(warningSeconds, "stop");
+      await gracefulShutdownSequence(warningSeconds, { kind: "stop" });
       emit("idle");
     } catch (e) {
       emit("idle", `error ${e instanceof Error ? e.message : String(e)}`);
@@ -324,6 +347,92 @@ export async function forceStop(): Promise<void> {
       await waitForState("exited", 35_000);
       emit("idle", "force-stopped");
     } catch (e) {
+      emit("idle", `error ${e instanceof Error ? e.message : String(e)}`);
+      throw e;
+    }
+  });
+}
+
+export class WorldResetFailedError extends Error {
+  constructor(
+    public readonly code: string,
+    public readonly detail: string,
+  ) {
+    super(`world-reset failed: ${code} — ${detail}`);
+    this.name = "WorldResetFailedError";
+  }
+}
+
+/**
+ * Orchestrate a destructive world reset.
+ *
+ * Flow:
+ *   warning (30s, "world reset" announcement)
+ *   → snapshot config
+ *   → saving (skipped — nothing to preserve)
+ *   → stopping (RCON quit → docker stop/kill)
+ *   → restore config (PZ might have clobbered .ini during shutdown)
+ *   → WIPE (rename world dir to `.trash-<iso>`)
+ *   → starting (PZ regenerates a fresh world)
+ *   → idle
+ *
+ * If the container was already stopped when invoked, we skip straight
+ * to the wipe step — no warning, no announce (no one to announce to),
+ * just trash + start.
+ *
+ * Throws `WorldResetFailedError` if the wipe itself fails. Throws
+ * `LifecycleBusyError` / `ProxyUnreachableError` for the usual
+ * pre-flight checks. Guarantees `phase` returns to `idle` in all
+ * outcomes.
+ */
+export async function resetWorld(
+  mode: ResetMode,
+  warningSeconds = 30,
+): Promise<WipeResult> {
+  if (!(await isProxyReachable())) throw new ProxyUnreachableError();
+  if (mutex.isLocked()) throw new LifecycleBusyError();
+  return withLock(async () => {
+    abortSignalled = false;
+    try {
+      const probe = await inspectPz();
+      const running = probe?.running ?? false;
+      if (running) {
+        await gracefulShutdownSequence(warningSeconds, {
+          kind: "restart",
+          skipSave: true,
+          reason:
+            mode === "total-nuke"
+              ? "WORLD WIPE + USER RESET"
+              : "WORLD WIPE",
+        });
+      }
+
+      // Container is stopped — safe to wipe.
+      emit("stopping", `wiping-world mode=${mode}`);
+      const wipe = await wipeWorld({ mode, containerRunning: false });
+      if (!wipe.ok) {
+        emit("idle", `world-reset-failed ${wipe.code}`);
+        throw new WorldResetFailedError(wipe.code, wipe.detail);
+      }
+
+      emit("starting", "post-reset");
+      await startPz();
+      const up = await waitForState("running", 600_000);
+      if (!up) {
+        emit("idle", "start-failed");
+        return wipe;
+      }
+      await new Promise((r) => setTimeout(r, 30_000));
+      const finalState = await inspectPz();
+      emit(
+        "idle",
+        finalState?.running
+          ? `world-reset-ok mode=${mode}`
+          : `start-failed exit=${finalState?.exitCode ?? "?"}`,
+      );
+      return wipe;
+    } catch (e) {
+      if (e instanceof WorldResetFailedError) throw e;
       emit("idle", `error ${e instanceof Error ? e.message : String(e)}`);
       throw e;
     }

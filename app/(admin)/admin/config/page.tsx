@@ -4,7 +4,9 @@ import { getSession } from "@/lib/auth/session";
 import { atLeast } from "@/lib/auth/role";
 import { ConfigTabs } from "@/components/config/config-tabs";
 import { ServerControlsCard } from "@/components/server/server-controls-card";
+import { DangerZoneCard } from "@/components/server/danger-zone-card";
 import { checkConfigAccess } from "@/lib/pz/access-check";
+import { detectServerPrefix } from "@/lib/pz/config-reader";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +28,20 @@ export default async function ConfigPage() {
   // banner gives operators a concrete diagnosis string.
   const access = await checkConfigAccess();
   const canEdit = atLeast(session.role, "OWNER");
+
+  // Best-effort prefix detection for the OWNER-only Danger Zone card.
+  // We swallow failures (no docker socket in dev, missing container,
+  // etc.) and hand `null` to the card, which surfaces a disabled state
+  // with a human-readable reason. Avoids forcing a round-trip from the
+  // client just to echo the prefix back during confirm.
+  let detectedPrefix: string | null = null;
+  if (canEdit) {
+    try {
+      detectedPrefix = await detectServerPrefix();
+    } catch {
+      detectedPrefix = null;
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -91,6 +107,10 @@ export default async function ConfigPage() {
       )}
 
       <ConfigTabs role={session.role} />
+
+      {canEdit && (
+        <DangerZoneCard role={session.role} prefix={detectedPrefix} />
+      )}
     </div>
   );
 }
