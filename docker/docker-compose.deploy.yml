@@ -1,25 +1,50 @@
+#
 # Production compose for HomePL VPS.
+#
 # Deploy to: /opt/docker/pz-crcon/docker-compose.yml
-# Requires: proxy-net + db-net (created by /opt/docker/infrastructure)
-# Requires: /opt/docker/pz-crcon/.env (production secrets, see docs/deployment.md)
+#
+# Requires:
+# - networks: proxy-net + db-net (created by /opt/docker/infrastructure)
+# - volume:   pz-data (external; owned by the pz-server stack)
+# - .env file with production secrets (see docs/deployment.md)
+#
+# IMPORTANT:
+# `pz-crcon` must mount the same `pz-data` volume as `pz-server`.
+# Without this, "wipe world" will restart the server but won't actually
+# remove the world data (because /pz-data inside pz-crcon is empty).
+#
 
 services:
   pz-crcon:
     image: majorluk/pz-crcon:latest
     container_name: pz-crcon
     restart: unless-stopped
+    user: "1000:1000"
+    # Supplementary group for access to /var/run/docker.sock. The socket on
+    # Ubuntu HomePL is root:docker with 660 perms; docker GID = 999 there.
+    # Override via env `DOCKER_GID` if your host uses a different GID.
+    group_add:
+      - "${DOCKER_GID:-999}"
     networks:
       - proxy-net
       - db-net
+      - pz-control-net
     env_file:
       - .env
-    # Read-only Docker socket mount: required for /api/admin/host-stats
-    # (container memory + CPU stats) and the /admin/logs viewer (live
-    # `docker logs -f pz-server` stream). See SECURITY.md for the threat
-    # model and why read-only is sufficient — we never call mutating
-    # endpoints, but mount-time `:ro` is a belt-and-braces guard.
     volumes:
+      - pz-data:/pz-data:rw
+      # Read-only Docker socket mount: required for /api/admin/host-stats
+      # (container memory + CPU stats) and the /admin/logs viewer (live
+      # `docker logs -f pz-server` stream). See SECURITY.md for the threat
+      # model and why read-only is sufficient — we never call mutating
+      # endpoints, but mount-time `:ro` is a belt-and-braces guard.
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      PZ_CONFIG_DIR: /pz-data/Server
+      PZ_SERVER_DIR: /pz-data/Server
+      PZ_BACKUP_DIR: /pz-data/Server/.backups
+      DOCKER_CONTROL_URL: http://docker-socket-proxy:2375
+      PZ_CONTAINER_NAME: pz-server
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
@@ -29,8 +54,39 @@ services:
       retries: 3
       start_period: 20s
 
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: pz-crcon-socket-proxy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+    networks:
+      - pz-control-net
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      CONTAINERS_START: 1
+      CONTAINERS_STOP: 1
+      CONTAINERS_RESTART: 1
+      CONTAINERS_KILL: 1
+      EXEC: 0
+      VOLUMES: 0
+      NETWORKS: 0
+      IMAGES: 0
+      SYSTEM: 0
+      INFO: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+volumes:
+  pz-data:
+    external: true
+
 networks:
   proxy-net:
     external: true
   db-net:
     external: true
+  pz-control-net: {}
