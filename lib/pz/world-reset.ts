@@ -32,7 +32,7 @@
  * were pruned.
  */
 
-import { readdir, rename, rm, stat } from "node:fs/promises";
+import { access, constants, readdir, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { detectServerPrefix } from "./config-reader";
 import { getLogger } from "@/lib/logger";
@@ -79,6 +79,7 @@ export interface WipeFailure {
     | "server-still-running"
     | "prefix-unsafe"
     | "data-dir-unreachable"
+    | "data-path-not-writable"
     | "rename-failed";
   detail: string;
 }
@@ -225,6 +226,40 @@ export async function wipeWorld(args: {
         detail: `target path ${t} is not under data dir ${root}`,
       };
     }
+  }
+
+  // Pre-flight: rename(src, dest) needs write on the parent directory
+  // (to create the `.trash-*` sibling). On mixed-ownership volumes
+  // (pz-server image often lands some paths as root:root during init,
+  // while pz-crcon runs as uid 1000) the rename EACCES-es deep inside
+  // trashIfExists, surfacing as a generic `rename-failed`. Detect it
+  // up-front and emit an actionable code + detail instead.
+  const unwritable: string[] = [];
+  for (const t of targets) {
+    const parent = dirname(t);
+    try {
+      await access(parent, constants.W_OK);
+    } catch {
+      // Only count existing-but-unwritable parents. A missing parent is
+      // either the data-dir itself (already guarded) or a known-no-op
+      // (target missing → trashIfExists short-circuits).
+      try {
+        await stat(parent);
+        unwritable.push(parent);
+      } catch {
+        // parent missing; trashIfExists will no-op
+      }
+    }
+  }
+  if (unwritable.length > 0) {
+    return {
+      ok: false,
+      code: "data-path-not-writable",
+      detail:
+        `container user cannot write to ${unwritable.join(", ")} — ` +
+        `fix volume ownership on the host ` +
+        `(e.g. \`chown -R 1000:1000 /var/lib/docker/volumes/pz-data/_data\`)`,
+    };
   }
 
   const stamp = isoStamp();
