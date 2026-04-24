@@ -18,6 +18,7 @@
  * new list immediately.
  */
 
+import { checkConfigAccess } from "../lib/pz/access-check";
 import { importCollection } from "../lib/pz/mods";
 
 async function main(): Promise<void> {
@@ -38,6 +39,18 @@ async function main(): Promise<void> {
   process.stderr.write(
     `[import] collection=${collectionId} replace=${replace}\n`,
   );
+
+  // The INI writer refuses unless the config-dir access probe has run at
+  // least once per process — the live pz-crcon does it at server boot
+  // (`server/ws.ts`), but this CLI is a fresh `tsx` process that needs
+  // to prime the cache itself before attempting any atomic write.
+  const access = await checkConfigAccess();
+  if (!access.ok) {
+    process.stderr.write(
+      `[import] config dir not accessible at ${access.dir}: ${access.reason}\n`,
+    );
+    process.exit(1);
+  }
   const result = await importCollection({
     collectionId,
     replaceExisting: replace,
