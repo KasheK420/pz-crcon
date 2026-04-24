@@ -111,13 +111,21 @@ function toRow(m: {
  * Build the `WorkshopItems=` and `Mods=` strings PZ expects, from the
  * current DB state. Only enabled mods are included; disabled rows are
  * kept in the DB for history but removed from the server's live config.
+ *
+ * Local mods (rows with `workshopId` starting with `local-`) are
+ * INCLUDED in `Mods=` (PZ loads them from `Zomboid/mods/<modId>/`)
+ * but EXCLUDED from `WorkshopItems=` — that list is Steam-only and PZ
+ * would fail to resolve the pseudo-id.
  */
 function assembleIniValues(mods: ModRow[]): {
   workshopItems: string;
   modsList: string;
 } {
   const enabled = mods.filter((m) => m.enabled).sort((a, b) => a.loadOrder - b.loadOrder);
-  const workshopItems = enabled.map((m) => m.workshopId).join(";");
+  const workshopItems = enabled
+    .filter((m) => !m.workshopId.startsWith("local-"))
+    .map((m) => m.workshopId)
+    .join(";");
   const modsList = enabled.map((m) => m.modId).join(";");
   return { workshopItems, modsList };
 }
