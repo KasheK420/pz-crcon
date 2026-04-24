@@ -1,0 +1,8 @@
+name=PZ-CRCON Companion
+poster=poster.png
+id=PZCrcon
+description=Server-side companion for the pz-crcon admin panel. Streams live player positions, deaths, helicopter events, and heartbeats to the panel's HMAC-signed webhook endpoint. Safe to run with panel offline — the mod skips HTTP calls until it reconnects.
+url=https://github.com/KasheK420/pz-crcon
+author=Lukas Majoros (@KasheK420)
+versionMin=41.78
+require=
