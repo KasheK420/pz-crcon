@@ -17,7 +17,23 @@ interface Status {
   uptimeSec: number;
   uptimeSource: "rcon-connect" | "process-start";
   tps: number | null;
+  inGameDay?: number | null;
+  inGameHourMin?: number | null;
+  luaModFresh?: boolean;
+  luaModHeartbeatAt?: number | null;
   history?: HistoryView;
+}
+
+function formatInGameTime(day: number | null | undefined, hourMin: number | null | undefined): string {
+  if (day == null && hourMin == null) return "—";
+  const parts: string[] = [];
+  if (day != null) parts.push(`Day ${day}`);
+  if (hourMin != null) {
+    const h = Math.floor(hourMin / 60);
+    const m = hourMin % 60;
+    parts.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+  }
+  return parts.join(" · ");
 }
 
 interface ContainerStat {
@@ -208,8 +224,10 @@ export function StatusCards() {
           value={status?.tps != null ? status.tps.toFixed(1) : "—"}
           foot={
             status?.tps != null
-              ? "approx · scraped from logs"
-              : "needs Lua mod for live TPS"
+              ? status.luaModFresh
+                ? "live from Lua mod"
+                : "approx · scraped from logs"
+              : "no TPS reading yet"
           }
         />
       </div>
@@ -219,13 +237,21 @@ export function StatusCards() {
         <ContainerCard label="pz-crcon MEM" s={hostStats?.pzCrcon} />
         <StatCard
           label="In-game Time"
-          value="—"
-          foot="needs Lua mod (Phase 4)"
+          value={formatInGameTime(status?.inGameDay, status?.inGameHourMin)}
+          foot={
+            status?.luaModFresh
+              ? "live · Lua mod heartbeat"
+              : "install companion mod — see docs/lua-mod-install.md"
+          }
         />
         <StatCard
           label="Weather"
           value="—"
-          foot="see in-game · Phase 4 will surface here"
+          foot={
+            status?.luaModFresh
+              ? "weather field reserved · Lua mod not reporting it yet"
+              : "install companion mod — see docs/lua-mod-install.md"
+          }
         />
       </div>
 

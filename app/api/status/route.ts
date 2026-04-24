@@ -4,6 +4,7 @@ import { parsePlayersOutput } from "@/lib/rcon/parsers";
 import { prisma } from "@/lib/db/client";
 import { getLastTps } from "@/lib/ws/log-streamer";
 import { historyView, recordSample } from "@/lib/observability/player-history";
+import { heartbeat as luaHeartbeat } from "@/lib/ingest/positions-store";
 
 let cache: { at: number; data: unknown } | null = null;
 const TTL_MS = 10_000;
@@ -44,6 +45,12 @@ export async function GET() {
   }
   const history = historyView();
 
+  // Lua-mod heartbeat: preferred source of truth for TPS / in-game day /
+  // hour. Falls back to the log-scraper TPS when the mod hasn't posted
+  // recently (or isn't installed at all).
+  const hb = luaHeartbeat();
+  const tps = hb.fresh && hb.tps !== null ? hb.tps : getLastTps();
+
   const data = {
     online,
     serverName: process.env.PUBLIC_SERVER_NAME ?? "MajorlukPZ",
@@ -51,7 +58,11 @@ export async function GET() {
     mods,
     uptimeSec,
     uptimeSource: firstConnectAt ? "rcon-connect" : "process-start",
-    tps: getLastTps(),
+    tps,
+    inGameDay: hb.fresh ? hb.day : null,
+    inGameHourMin: hb.fresh ? hb.hourMin : null,
+    luaModFresh: hb.fresh,
+    luaModHeartbeatAt: hb.at,
     history,
     ts: Date.now(),
   };

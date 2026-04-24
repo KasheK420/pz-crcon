@@ -135,7 +135,14 @@ export async function POST(req: NextRequest) {
   const { positions: pos, events, heartbeat } = body.data;
 
   if (heartbeat) {
-    positions.applyHeartbeat({ tps: heartbeat.tps ?? null, receivedAt: now });
+    positions.applyHeartbeat({
+      tps: heartbeat.tps ?? null,
+      day: heartbeat.day ?? null,
+      hourMin: heartbeat.hourMin ?? null,
+      playersOnline: heartbeat.playersOnline ?? null,
+      uptimeSec: heartbeat.uptimeSec ?? null,
+      receivedAt: now,
+    });
   }
   for (const p of pos) {
     positions.upsert({

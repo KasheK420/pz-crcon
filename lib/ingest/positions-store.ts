@@ -51,6 +51,10 @@ const PUBLIC_GRID_SIZE = 250;
 const _positions = new Map<string, Position>();
 let _lastHeartbeatAt: number | null = null;
 let _lastTps: number | null = null;
+let _lastDay: number | null = null;
+let _lastHourMin: number | null = null;
+let _lastPlayersOnline: number | null = null;
+let _lastUptimeSec: number | null = null;
 
 // Hourly-rotating salt for public hashing. Prevents a stalker from
 // correlating the same public token across long sessions while keeping
@@ -76,9 +80,21 @@ export function upsert(p: Position): void {
   _positions.set(p.steamId, p);
 }
 
-export function applyHeartbeat(h: { tps?: number | null; receivedAt: number }): void {
+export function applyHeartbeat(h: {
+  tps?: number | null;
+  day?: number | null;
+  hourMin?: number | null;
+  playersOnline?: number | null;
+  uptimeSec?: number | null;
+  receivedAt: number;
+}): void {
   _lastHeartbeatAt = h.receivedAt;
   if (h.tps !== undefined && h.tps !== null) _lastTps = h.tps;
+  if (h.day !== undefined && h.day !== null) _lastDay = h.day;
+  if (h.hourMin !== undefined && h.hourMin !== null) _lastHourMin = h.hourMin;
+  if (h.playersOnline !== undefined && h.playersOnline !== null)
+    _lastPlayersOnline = h.playersOnline;
+  if (h.uptimeSec !== undefined && h.uptimeSec !== null) _lastUptimeSec = h.uptimeSec;
 }
 
 function prune(now: number): void {
@@ -122,10 +138,41 @@ export function lastTps(): number | null {
   return _lastTps;
 }
 
+export interface HeartbeatSnapshot {
+  at: number | null;
+  tps: number | null;
+  day: number | null;
+  hourMin: number | null;
+  playersOnline: number | null;
+  uptimeSec: number | null;
+  /** True when we've received a heartbeat in the last 2 minutes. */
+  fresh: boolean;
+}
+
+const FRESH_MS = 120_000;
+
+export function heartbeat(): HeartbeatSnapshot {
+  const fresh =
+    _lastHeartbeatAt !== null && Date.now() - _lastHeartbeatAt < FRESH_MS;
+  return {
+    at: _lastHeartbeatAt,
+    tps: _lastTps,
+    day: _lastDay,
+    hourMin: _lastHourMin,
+    playersOnline: _lastPlayersOnline,
+    uptimeSec: _lastUptimeSec,
+    fresh,
+  };
+}
+
 /** Test / admin helper. Does NOT fire events. */
 export function reset(): void {
   _positions.clear();
   _lastHeartbeatAt = null;
   _lastTps = null;
+  _lastDay = null;
+  _lastHourMin = null;
+  _lastPlayersOnline = null;
+  _lastUptimeSec = null;
   log().warn("positions store reset");
 }
