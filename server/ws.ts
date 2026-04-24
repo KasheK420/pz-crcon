@@ -5,6 +5,7 @@ import { attachWs } from "@/lib/ws/server";
 import { installLogStreamer } from "@/lib/ws/log-streamer";
 import { checkConfigAccess } from "@/lib/pz/access-check";
 import { startScheduleRunner } from "@/lib/schedules/runner";
+import { installNotificationsDispatcher } from "@/lib/notifications/dispatcher";
 import { getLogger } from "@/lib/logger";
 
 const log = getLogger().child({ mod: "server" });
@@ -24,6 +25,7 @@ app
     attachWs(httpServer);
     installLogStreamer();
     startScheduleRunner();
+    installNotificationsDispatcher();
     // Never throw at boot — the route-level gate surfaces the state.
     void checkConfigAccess().catch((e) => console.warn("access-check boot failed:", e));
     httpServer.listen(port, () => {

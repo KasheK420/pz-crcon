@@ -55,5 +55,13 @@ export async function POST(
     output,
     ts: Date.now(),
   });
+  publish("events:admin", {
+    kind: "admin-action",
+    action: {
+      kind: "PLAYER_KICKED",
+      target: player.name,
+      details: { playerId: player.id, reason },
+    },
+  });
   return NextResponse.json({ ok: true, output });
 }

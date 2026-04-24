@@ -8,6 +8,8 @@ import { publish } from "@/lib/ws/server";
 
 const Body = z.object({
   reason: z.string().max(200).optional(),
+  /** Ban duration in hours. Omit or set to 0 for a permanent ban. */
+  durationHours: z.number().int().min(0).max(24 * 365).optional(),
 });
 
 export async function POST(
@@ -27,6 +29,9 @@ export async function POST(
     return NextResponse.json({ error: "BAD_REQUEST" }, { status: 400 });
   }
   const reason = parsed.data.reason?.trim() || "Banned by admin";
+  const durationHours = parsed.data.durationHours ?? 0;
+  const banExpiresAt =
+    durationHours > 0 ? new Date(Date.now() + durationHours * 3_600_000) : null;
 
   const player = await prisma.player.findUnique({ where: { id: playerId } });
   if (!player) {
@@ -48,6 +53,7 @@ export async function POST(
       isOnline: false,
       banReason: reason,
       banByUserId: session.userId,
+      banExpiresAt,
     },
   });
   await prisma.adminAction.create({
@@ -55,7 +61,7 @@ export async function POST(
       userId: session.userId,
       kind: "player_ban",
       target: player.name,
-      details: { playerId: player.id, reason, command, output },
+      details: { playerId: player.id, reason, command, output, durationHours, banExpiresAt: banExpiresAt?.toISOString() ?? null },
     },
   });
   publish("rcon:output", {
@@ -63,6 +69,14 @@ export async function POST(
     command,
     output,
     ts: Date.now(),
+  });
+  publish("events:admin", {
+    kind: "admin-action",
+    action: {
+      kind: "PLAYER_BANNED",
+      target: player.name,
+      details: { playerId: player.id, reason },
+    },
   });
   return NextResponse.json({ ok: true, output });
 }

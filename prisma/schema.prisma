@@ -147,22 +147,40 @@ model ApiToken {
   expiresAt  DateTime?
 }
 
-model SandboxOverride {
-  id          String    @id @default(cuid())
-  key         String    @unique
-  value       Json
-  setByUserId String?
-  setAt       DateTime  @default(now())
-  appliedAt   DateTime?
-}
-
-model ServerEvent {
+model WorldEvent {
+  // Game-world events streamed from the companion Lua mod through
+  // `POST /api/webhook/mod`. Exact shape of `metaJson` is kind-specific:
+  //   death        → { cause, nearby?: string[] }
+  //   join / leave → { }
+  //   chat         → { text }  (only persisted when INGEST_STORE_CHAT=true)
+  //   heli         → { targetSteamId?, targetName? }
+  //   gunshot      → { suppressed?: boolean }
+  //   generator    → { state: "on"|"off", owner?: string }
+  //   mod_stale    → { sinceMs }
   id         String   @id @default(cuid())
   kind       String
-  payload    Json
-  occurredAt DateTime @default(now())
+  player     String?
+  region     String?
+  x          Int?
+  y          Int?
+  z          Int?
+  day        Int?
+  metaJson   Json?
+  ts         DateTime @default(now())
 
-  @@index([kind, occurredAt])
+  @@index([kind, ts])
+  @@index([player, ts])
+}
+
+// Panel-level key/value store for OWNER-managed runtime settings that
+// don't belong in env vars (Discord webhook, per-event notification
+// toggles, theme defaults). One row per logical setting; value is a
+// Json blob interpreted by whichever module owns the key.
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+  updatedBy String?
 }
 
 model AuditEvent {

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LiveDot } from "@/components/pz/live-dot";
 import { Panel } from "@/components/pz/panel";
@@ -139,7 +140,12 @@ export function PlayersTable({
                         {p.name.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <div className="font-medium text-pz-text">{p.name}</div>
+                        <Link
+                          href={`/admin/players/${p.id}`}
+                          className="font-medium text-pz-text hover:text-pz-primary"
+                        >
+                          {p.name}
+                        </Link>
                         <div className="pz-mono text-[10px] text-pz-muted">#{p.id.slice(0, 8)}</div>
                       </div>
                     </div>

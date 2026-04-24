@@ -105,6 +105,27 @@ function onMessage(ws: WebSocket, raw: string): void {
   }
 }
 
+type LocalListener = (data: unknown) => void | Promise<void>;
+const localListeners = new Map<Channel, Set<LocalListener>>();
+
+/**
+ * Subscribe to `publish()` calls in-process, without going through the
+ * WebSocket. Used by server-side consumers (Discord notifier, analytics,
+ * log persistence) that want to react to events without the
+ * browser-facing channel plumbing.
+ */
+export function subscribeLocal(channel: Channel, fn: LocalListener): () => void {
+  let set = localListeners.get(channel);
+  if (!set) {
+    set = new Set();
+    localListeners.set(channel, set);
+  }
+  set.add(fn);
+  return () => {
+    set?.delete(fn);
+  };
+}
+
 /** Publish an event to all clients subscribed to the channel. */
 export function publish(channel: Channel, data: unknown): void {
   const envelope = JSON.stringify({
@@ -115,6 +136,16 @@ export function publish(channel: Channel, data: unknown): void {
   for (const [ws, state] of clients.entries()) {
     if (state.subs.has(channel) && ws.readyState === ws.OPEN) {
       ws.send(envelope);
+    }
+  }
+  const locals = localListeners.get(channel);
+  if (locals && locals.size > 0) {
+    for (const fn of locals) {
+      try {
+        void fn(data);
+      } catch (e) {
+        log().warn({ err: e, channel }, "local listener threw");
+      }
     }
   }
 }

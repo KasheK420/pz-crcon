@@ -7,6 +7,8 @@ import { LiveDot } from "@/components/pz/live-dot";
 import { Button } from "@/components/ui/button";
 import { csrfFetch } from "@/lib/csrf/fetch";
 import type { Role } from "@/lib/auth/role";
+import { DiscordTab } from "./discord-tab";
+import { UsersTab } from "./users-tab";
 
 interface SettingEntry {
   key: string;
@@ -51,7 +53,13 @@ function relTime(iso: string | null): string {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
-export function SettingsView({ role }: { role: Role }) {
+export function SettingsView({
+  role,
+  currentUserId,
+}: {
+  role: Role;
+  currentUserId: string;
+}) {
   const isOwner = role === "OWNER";
   const [data, setData] = useState<ApiResponse | null>(null);
   const [tokens, setTokens] = useState<TokenRow[] | null>(null);
@@ -210,6 +218,10 @@ export function SettingsView({ role }: { role: Role }) {
             </div>
           ))}
       </Panel>
+
+      <DiscordTab role={role} />
+
+      {isOwner && <UsersTab currentUserId={currentUserId} />}
 
       {isOwner && (
         <Panel
