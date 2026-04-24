@@ -147,6 +147,29 @@ model ApiToken {
   expiresAt  DateTime?
 }
 
+// NOTE: SandboxOverride and ServerEvent remain in this schema even though
+// no code references them. They were scheduled for removal in the Phase 2
+// gap-analysis plan but dropping them on a live DB requires
+// `--accept-data-loss`, which the operator must opt into explicitly. The
+// tables stay until someone runs that migration by hand.
+model SandboxOverride {
+  id          String    @id @default(cuid())
+  key         String    @unique
+  value       Json
+  setByUserId String?
+  setAt       DateTime  @default(now())
+  appliedAt   DateTime?
+}
+
+model ServerEvent {
+  id         String   @id @default(cuid())
+  kind       String
+  payload    Json
+  occurredAt DateTime @default(now())
+
+  @@index([kind, occurredAt])
+}
+
 model WorldEvent {
   // Game-world events streamed from the companion Lua mod through
   // `POST /api/webhook/mod`. Exact shape of `metaJson` is kind-specific:
