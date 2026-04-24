@@ -55,7 +55,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { getConfigAccessOk } from "./access-check";
+import { checkConfigAccess, getConfigAccessOk } from "./access-check";
 import {
   readSandboxVars,
   readServerIni,
@@ -194,13 +194,22 @@ async function atomicWrite(file: string, content: string): Promise<void> {
   await rename(tmp, file);
 }
 
-function ensureReady(): WriteOutcome | null {
+async function ensureReady(): Promise<WriteOutcome | null> {
+  // `server/ws.ts` primes the access-check cache at boot, and visiting
+  // `/admin/config` re-primes it on every SSR. Routes that never
+  // touch /admin/config (e.g. /api/admin/mods/sync "Apply to INI")
+  // would see the initial `_ok = false` default and fail here. Fall
+  // back to a fresh probe on cache miss so every writer caller is
+  // self-healing. Successful probes warm the cache for later calls.
   if (!getConfigAccessOk()) {
-    return {
-      ok: false,
-      code: "config-dir-unreachable",
-      detail: "fs.access failed (see access-check logs)",
-    };
+    const probe = await checkConfigAccess();
+    if (!probe.ok) {
+      return {
+        ok: false,
+        code: "config-dir-unreachable",
+        detail: `fs.access failed on ${probe.dir}${probe.reason ? ` — ${probe.reason}` : ""}`,
+      };
+    }
   }
   const phase = lifecyclePhaseGetter();
   if (phase !== "idle") {
@@ -281,7 +290,7 @@ export async function writeServerIni(
   if (Object.keys(patch).length === 0) {
     return { ok: false, code: "empty-patch", detail: "no keys in patch" };
   }
-  const notReady = ensureReady();
+  const notReady = await ensureReady();
   if (notReady) return notReady;
 
   return writeMutex.runExclusive(async () => {
@@ -409,7 +418,7 @@ export async function writeSandboxVars(
   if (Object.keys(patch).length === 0) {
     return { ok: false, code: "empty-patch", detail: "no keys in patch" };
   }
-  const notReady = ensureReady();
+  const notReady = await ensureReady();
   if (notReady) return notReady;
 
   return writeMutex.runExclusive(async () => {

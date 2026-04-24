@@ -24,6 +24,7 @@
 
 import { prisma } from "@/lib/db/client";
 import { getLogger } from "@/lib/logger";
+import { checkConfigAccess } from "./access-check";
 import { readServerIni } from "./config-reader";
 import { writeServerIni, type WriteOutcome } from "./writer";
 import {
@@ -158,6 +159,13 @@ export async function syncIniFromDb(): Promise<{
   workshopItems: string;
   modsList: string;
 } | { ok: false; code: "ini-write"; detail: string; writerError?: WriteOutcome }> {
+  // Prime the writer's access-check cache. `server/ws.ts` primes it at
+  // boot, but route handlers sometimes run in a different module
+  // graph (Next standalone bundle) where the cached `_ok` defaults to
+  // false. Re-probing here is idempotent and ensures a cold "Apply to
+  // INI" click succeeds even if the user never visited /admin/config
+  // first (which also primes it via SSR).
+  await checkConfigAccess();
   const ini = await readServerIni();
   if (!ini.ok || ini.mtimeMs === undefined) {
     return {
