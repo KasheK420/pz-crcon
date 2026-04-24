@@ -75,6 +75,34 @@ export function verifyHmac(input: VerifyInput): VerifyOutcome {
 }
 
 /**
+ * Fallback auth: accept a raw shared-secret header match when the Lua
+ * mod can't compute HMAC (PZ 42 `luanet` Java-interop limitation). The
+ * secret travels over HTTPS (Cloudflare Tunnel → NPM → pz-crcon), so
+ * confidentiality is the TLS layer's job. Replay protection is weaker
+ * than HMAC (no body binding), but for a single-tenant panel with a
+ * tightly controlled mod source this is acceptable as an interim.
+ *
+ * Accepts current OR next secret to keep rotation semantics.
+ */
+export function verifyBearerSecret(headerValue: string | null): VerifyOutcome {
+  if (!headerValue) return { ok: false, reason: "missing-signature" };
+  const provided = headerValue.trim();
+  const env = loadEnv();
+  for (const rev of ["current", "next"] as SecretRev[]) {
+    const secret = rev === "next" ? env.WEBHOOK_HMAC_SECRET_NEXT : env.WEBHOOK_HMAC_SECRET;
+    if (!secret) continue;
+    if (secret.length === provided.length) {
+      const a = Buffer.from(secret);
+      const b = Buffer.from(provided);
+      if (a.length === b.length && timingSafeEqual(a, b)) {
+        return { ok: true, rev };
+      }
+    }
+  }
+  return { ok: false, reason: "mismatch" };
+}
+
+/**
  * Build the signature a signed request should carry. Helpful for the
  * smoke-test script and for local dev tools.
  */

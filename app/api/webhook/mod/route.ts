@@ -21,7 +21,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { loadEnv } from "@/lib/env";
-import { verifyHmac } from "@/lib/ingest/hmac";
+import { verifyBearerSecret, verifyHmac } from "@/lib/ingest/hmac";
 import * as positions from "@/lib/ingest/positions-store";
 import { ingestBatch, type IncomingEvent, type WorldEventKind } from "@/lib/ingest/events-store";
 import { getLogger } from "@/lib/logger";
@@ -101,13 +101,23 @@ export async function POST(req: NextRequest) {
 
   const sigHeader = req.headers.get("x-pz-signature");
   const revHeader = req.headers.get("x-pz-secret-rev");
-  const hmac = verifyHmac({
-    rawBody: rawBuf,
-    signatureHeader: sigHeader,
-    revHeader,
-  });
+  const sharedSecret = req.headers.get("x-pz-shared-secret");
+
+  // Prefer HMAC when present, fall back to shared-secret header for
+  // clients (the PZ 42 Lua companion) that can't compute HMAC due to
+  // luanet Java-interop limitations. Either path is acceptable because
+  // TLS already protects confidentiality end-to-end.
+  let hmac: ReturnType<typeof verifyHmac>;
+  if (sigHeader) {
+    hmac = verifyHmac({ rawBody: rawBuf, signatureHeader: sigHeader, revHeader });
+  } else {
+    hmac = verifyBearerSecret(sharedSecret);
+  }
   if (!hmac.ok) {
-    log().warn({ reason: hmac.reason }, "webhook hmac rejected");
+    log().warn(
+      { reason: hmac.reason, hadSig: Boolean(sigHeader), hadSecret: Boolean(sharedSecret) },
+      "webhook auth rejected",
+    );
     return NextResponse.json(
       { ok: false, code: "unauthorised", reason: hmac.reason },
       { status: 401 },

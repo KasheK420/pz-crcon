@@ -121,6 +121,28 @@ After the recreate, PZ boots, templates INI with the 83+1 entries,
 and starts downloading any Workshop items not yet on disk. The
 panel's `/admin/mods` INI-drift banner disappears on the next tick.
 
+## Addendum — workshop content is also ephemeral
+
+Discovered during the 2026-04-24 install pass: the renegademaster
+image installs PZ to `/home/steam/ZomboidDedicatedServer/` which is
+**not** covered by either of the volume mounts the reference compose
+ships (`pz-data` → `/home/steam/Zomboid` and `pz-server-files` →
+`/home/steam/pz-dedicated`). Both the 3 GB base game AND the
+downloaded Workshop mods live in the container's writable layer,
+so every `docker compose up -d` with a config change triggers a full
+re-download (7 GB over Steam CDN at ~80 KB/s = 1-2h).
+
+Mitigation applied: added a bind mount `./workshop:/home/steam/
+ZomboidDedicatedServer/steamapps/workshop` to the pz-server
+compose. Workshop content (1.4 GB) now persists across recreates.
+Base-game binary (3 GB) still re-downloads — not worth persisting,
+the image auto-updates on boot anyway.
+
+Long-term: add a `pz-server-install` volume for the whole
+`/home/steam/ZomboidDedicatedServer/` tree. Skip for now because
+steamcmd has to run anyway to validate integrity after every update,
+so the wall-clock saving is only ~50%.
+
 ## Follow-up
 
 - Add a panel route `POST /api/admin/mods/apply-to-env` that does
@@ -132,3 +154,5 @@ panel's `/admin/mods` INI-drift banner disappears on the next tick.
 - Track upstream issue on the renegademaster image to expose a
   `SKIP_ONBOOT_INIT` env flag so operators can fully opt out of
   entrypoint regeneration.
+- Ship the workshop bind mount as a deployment default in the
+  `docs/deployment/` sample compose for new operators.
