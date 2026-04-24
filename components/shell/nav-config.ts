@@ -41,6 +41,12 @@ export const NAV: NavGroup[] = [
         minRole: "ADMIN",
       },
       {
+        id: "mods",
+        label: "Mods",
+        href: "/admin/mods",
+        minRole: "VIEWER",
+      },
+      {
         id: "logs",
         label: "Server Logs",
         href: "/admin/logs",
@@ -53,10 +59,28 @@ export const NAV: NavGroup[] = [
         minRole: "VIEWER",
       },
       {
+        id: "backups",
+        label: "Backups",
+        href: "/admin/backups",
+        minRole: "VIEWER",
+      },
+      {
+        id: "schedules",
+        label: "Schedules",
+        href: "/admin/schedules",
+        minRole: "VIEWER",
+      },
+      {
         id: "startup",
         label: "Startup Config",
         href: "/admin/startup",
         minRole: "OWNER",
+      },
+      {
+        id: "settings",
+        label: "Settings",
+        href: "/admin/settings",
+        minRole: "VIEWER",
       },
     ],
   },
