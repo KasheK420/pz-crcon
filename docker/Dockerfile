@@ -61,6 +61,10 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/lib ./lib
+# `scripts/` holds one-shot admin CLIs invoked via `docker exec`
+# (e.g. `import-collection.ts`) — not part of the Next runtime, but
+# the runtime image already has tsx so shipping the TS is cheap.
+COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 # Non-root user
