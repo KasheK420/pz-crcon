@@ -3,6 +3,13 @@
 import { useEffect, useState } from "react";
 import { StatCard } from "@/components/pz/stat-card";
 
+interface HistoryView {
+  samples: Array<{ ts: number; count: number }>;
+  intervalMs: number;
+  windowMs: number;
+  capacity: number;
+}
+
 interface Status {
   online: boolean;
   serverName: string;
@@ -10,6 +17,7 @@ interface Status {
   uptimeSec: number;
   uptimeSource: "rcon-connect" | "process-start";
   tps: number | null;
+  history?: HistoryView;
 }
 
 interface ContainerStat {
@@ -145,8 +153,18 @@ export function StatusCards() {
     };
   }, []);
 
-  // Phase 1.5: empty sparkline (no historical store yet).
-  const sparkData = Array(12).fill(status?.players.count ?? 0);
+  // 24 h ring buffer from /api/status. If the server just started the
+  // buffer will be empty; render a flat line at the current count until
+  // enough 5-min samples accumulate.
+  const samples = status?.history?.samples ?? [];
+  const sparkData =
+    samples.length > 1
+      ? samples.map((s) => s.count)
+      : Array(12).fill(status?.players.count ?? 0);
+  const sparkFoot =
+    samples.length > 1
+      ? `${samples.length} / ${status?.history?.capacity ?? 288} samples · 5-min tick`
+      : "warming up · needs 5+ min of polls";
 
   return (
     <div className="flex flex-col gap-3">
@@ -217,7 +235,7 @@ export function StatusCards() {
           <div className="v">
             <Sparkline data={sparkData} />
           </div>
-          <div className="foot">historical store · Phase 2</div>
+          <div className="foot">{sparkFoot}</div>
         </div>
       </div>
     </div>

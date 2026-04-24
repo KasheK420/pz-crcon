@@ -38,42 +38,54 @@ export async function GET(req: Request) {
     log().warn({ err: e }, "rcon players failed, falling back to DB-only");
   }
 
-  // Seed unknown online players into the DB so they show up in the UI.
-  if (serverOnline && onlineNames.length > 0) {
-    const existing = await prisma.player.findMany({
-      where: { name: { in: onlineNames } },
-      select: { name: true },
-    });
-    const existingNames = new Set(existing.map((p) => p.name));
-    const unseen = onlineNames.filter((n) => !existingNames.has(n));
-    if (unseen.length > 0) {
-      // steamId is required + unique. Without the Lua mod we don't know
-      // it yet, so we synthesize a stable placeholder per name. The Lua
-      // mod will overwrite these when it lands in Phase 4.
-      await prisma.$transaction(
-        unseen.map((name) =>
-          prisma.player.upsert({
-            where: { steamId: `pending:${name}` },
-            update: { lastSeen: new Date(), isOnline: true },
-            create: {
-              steamId: `pending:${name}`,
-              name,
-              isOnline: true,
-              lastSeen: new Date(),
-            },
-          })
-        )
-      );
+  // Sync DB isOnline state against the live RCON roster. CRITICAL: run
+  // this even when `onlineNames` is empty, otherwise a completely empty
+  // server leaves every previous "online" row stuck at isOnline=true
+  // forever (reproduced as "2d ago ● ONLINE" in the UI after PZ had no
+  // connections for a while).
+  if (serverOnline) {
+    if (onlineNames.length > 0) {
+      const existing = await prisma.player.findMany({
+        where: { name: { in: onlineNames } },
+        select: { name: true },
+      });
+      const existingNames = new Set(existing.map((p) => p.name));
+      const unseen = onlineNames.filter((n) => !existingNames.has(n));
+      if (unseen.length > 0) {
+        // steamId is required + unique. Without the Lua mod we don't
+        // know it yet, so we synthesize a stable placeholder per name.
+        // The Lua mod will overwrite these when it lands in Phase 4.
+        await prisma.$transaction(
+          unseen.map((name) =>
+            prisma.player.upsert({
+              where: { steamId: `pending:${name}` },
+              update: { lastSeen: new Date(), isOnline: true },
+              create: {
+                steamId: `pending:${name}`,
+                name,
+                isOnline: true,
+                lastSeen: new Date(),
+              },
+            }),
+          ),
+        );
+      }
+      await prisma.player.updateMany({
+        where: { name: { in: onlineNames } },
+        data: { isOnline: true, lastSeen: new Date() },
+      });
+      await prisma.player.updateMany({
+        where: { name: { notIn: onlineNames }, isOnline: true },
+        data: { isOnline: false },
+      });
+    } else {
+      // Empty roster — nobody is online right now. Clear every stale
+      // `isOnline=true` flag.
+      await prisma.player.updateMany({
+        where: { isOnline: true },
+        data: { isOnline: false },
+      });
     }
-    // Sync isOnline flags for current roster.
-    await prisma.player.updateMany({
-      where: { name: { in: onlineNames } },
-      data: { isOnline: true, lastSeen: new Date() },
-    });
-    await prisma.player.updateMany({
-      where: { name: { notIn: onlineNames }, isOnline: true },
-      data: { isOnline: false },
-    });
   }
 
   const where = onlineOnly ? { isOnline: true } : {};

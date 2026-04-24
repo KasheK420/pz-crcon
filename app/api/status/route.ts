@@ -3,6 +3,7 @@ import { rconExecute, getFirstConnectAt } from "@/lib/rcon/client";
 import { parsePlayersOutput } from "@/lib/rcon/parsers";
 import { prisma } from "@/lib/db/client";
 import { getLastTps } from "@/lib/ws/log-streamer";
+import { historyView, recordSample } from "@/lib/observability/player-history";
 
 let cache: { at: number; data: unknown } | null = null;
 const TTL_MS = 10_000;
@@ -34,6 +35,15 @@ export async function GET() {
   const uptimeSec = Math.floor(
     (Date.now() - (firstConnectAt ?? PROCESS_STARTED_AT)) / 1000
   );
+
+  // Feed the 24 h sparkline ring buffer. Only sample when we actually
+  // got a fresh RCON read — otherwise the buffer would get confused by
+  // "RCON offline ⇒ zero players" during a brief PZ restart.
+  if (online) {
+    recordSample(players.count);
+  }
+  const history = historyView();
+
   const data = {
     online,
     serverName: process.env.PUBLIC_SERVER_NAME ?? "MajorlukPZ",
@@ -42,6 +52,7 @@ export async function GET() {
     uptimeSec,
     uptimeSource: firstConnectAt ? "rcon-connect" : "process-start",
     tps: getLastTps(),
+    history,
     ts: Date.now(),
   };
   cache = { at: Date.now(), data };
