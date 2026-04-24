@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Phase 2: Operator suite (mods, backups, schedules, settings)
+- `/admin/mods` — workshop-driven mod manager. Add by numeric ID or
+  URL, enable/disable (drops from INI without losing DB row), ↑/↓
+  reorder, delete, refresh Steam metadata, and bulk **import Workshop
+  collection** with optional replace-all. Rewrites `WorkshopItems=`
+  and `Mods=` in the live server.ini through the existing atomic
+  writer (three-way merge preserved). DB is source of truth; INI is
+  a materialised view with a "drift" banner when the two diverge.
+- `/admin/backups` — on-demand tar.gz snapshots of `Saves/Multiplayer`
+  + server config + user DB. List / create / download / delete for
+  ADMIN; restore gated behind OWNER and refuses while the PZ
+  container is running (pre-restore trash rename lets you revert).
+  Retention: MANUAL and PRE_RESTART kept forever, AUTO pruned to
+  newest 14.
+- `/admin/schedules` — cron-driven recurring actions, runner lives on
+  the pz-crcon WS process and ticks at minute granularity. Four
+  action kinds: `announce` (servermsg broadcast), `restart` (graceful
+  restart), `restart-warn` (countdown with intermediate servermsg
+  breakpoints), `auto-backup`. One-click **Fire now** for ad-hoc
+  manual runs and payload editing. UTC-clocked, no missed-tick
+  catch-up after a crcon restart.
+- `/admin/settings` — read-only env-var view grouped by concern
+  (Public site / PZ server / RCON / Discord / Phase 4 webhook) plus
+  OWNER-only **API token** management: SHA-256 hashed tokens with
+  prefix lookup, configurable scopes list, optional expiry. Raw
+  token value shown exactly once at creation. Reserved for the
+  Phase 4 Lua companion mod webhook.
+- Sidebar picks up Mods, Backups, Schedules, Settings under
+  admin group.
+
+### Changed
+- `.gitignore` narrowed the blanket `backups/` entry to `/backups/`
+  so source directories named `backups/` (new `components/backups/`)
+  are tracked again.
+- `server/ws.ts` now kicks off the schedule runner at boot alongside
+  the WS attach and log streamer.
+
+### Added — Phase 1.7: Config editor, server controls & logs fix
+- Editable `<prefix>.ini` via `PUT /api/admin/config/ini` (OWNER, CSRF) —
+  typed per-key controls, live diff modal, restart prompt, atomic writes
+  (tmp → fsync → rename) with per-save `.bak-<iso>` chain in a sibling
+  `.backups/` dir, gated by a process-level mutex and a
+  "lifecycle must be idle" check so pz-server's shutdown-flush cannot
+  race the panel
+- Editable `<prefix>_SandboxVars.lua` via `PUT /api/admin/config/sandbox`
+  (OWNER, CSRF) — offset-based splicing so unrelated lines, comments,
+  and formatting survive unchanged
+- OWNER-only secret reveal at `GET /api/admin/config/ini/secrets` —
+  non-OWNER always see redacted values on the main GET
+- Server lifecycle controls: `POST /api/admin/server/{start,stop,
+  restart,abort,force-stop,reset-world}` (ADMIN+, `force-stop` and
+  `reset-world` OWNER-only with typed confirmation), plus
+  `GET /api/admin/server/state` for phase + container + RCON + uptime
+- `ServerControlsCard` on `/admin` and the config page, with a
+  `LifecyclePhaseBadge` driven by a new `server:lifecycle` WS channel
+  and a `DangerZoneCard` on `/admin/config`
+- `AuditEvent` Prisma model + `AuditKind` enum
+  (`CONFIG_WRITE`, `LIFECYCLE_START`, `LIFECYCLE_STOP`,
+  `LIFECYCLE_RESTART`, `LIFECYCLE_FORCE_STOP`, `LIFECYCLE_ABORT`) —
+  every config write and lifecycle op is persisted and paginated via
+  `GET /api/admin/audit` (MODERATOR+); surfaced on the overview as
+  an `AuditCard`
+- CSRF double-submit pattern for admin mutations (`lib/csrf/check.ts` +
+  `lib/csrf/fetch.ts`) against the Auth.js CSRF cookie family
+- Isolated `tecnativa/docker-socket-proxy` sidecar with explicit endpoint
+  allowlist (`CONTAINERS=1`, `POST=1`, `START=1`, `STOP=1`, `RESTART=1`,
+  `KILL=1`) for all mutating Docker ops — the app container no longer
+  needs to touch the raw socket for start/stop/kill
+- `lib/server/lifecycle.ts` — RCON-first graceful flow (warning →
+  `save` → `quit` → wait exited → optional snapshot restore → docker
+  start), with `abort` only affecting the `warning` phase by design
+- `lib/pz/world-reset.ts` (`wipeWorld` + trash rename) and
+  `lib/pz/snapshot.ts` (snapshot / restore config around shutdown)
+- `lib/pz/ini-descriptors.ts` expanded to ~120 entries and a new
+  `lib/pz/sandbox-descriptors.ts` with ~130 entries, both driving the
+  Zod validator
+- Integration coverage: `tests/integration/api.config.test.ts`,
+  `tests/integration/api.server.test.ts`, and a
+  `tests/integration/docker-proxy.endpoints.test.ts` smoke job
+- Production `pz-data` bind-mount flipped to RW (see `docs/deployment.md`
+  §2.0 — requires a one-off `chown -R 1000:1000` on the shared volume)
+
+### Changed — Phase 1.7
+- `/admin/logs` viewer works in production again — the WS log-streamer
+  now opens the Docker socket on boot via `installLogStreamer()` and
+  surfaces the failure mode clearly when the socket or container is
+  missing
+- `lib/ws/channels.ts`: added `server:lifecycle` (VIEWER+). The
+  existing `players:positions` channel stays a placeholder until the
+  Phase 4 ingest lands
+
 ### Added — Phase 1.6: Admin tools
 - Full RCON command catalog expanded from 19 to 45 commands
   (`lib/rcon/commands.ts`) with categories (server / player / chat /
@@ -82,5 +173,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker Compose deployment
 - Discord OAuth authentication
 - Documentation covering setup and configuration
+
+### Planned for 0.3.0 (Phase 2 — Operator suite)
+See [`docs/superpowers/plans/2026-04-24-phase2-operator-suite.md`](docs/superpowers/plans/2026-04-24-phase2-operator-suite.md).
+- Mod manager UI (enable/disable, reorder, add from Workshop URL)
+- Persistent log viewer (chat / death / admin tabs with filter, search, export)
+- Player profile page at `/admin/players/[id]` with notes, ban duration/reason, session-diff playtime
+- Env validator extended to all `PZ_*` / `PUBLIC_*` / `DOCKER_*` variables
+- Dropped unused `SandboxOverride` and `ServerEvent` Prisma models
+
+### Planned for 0.4.0 (Phase 3 — Ops)
+See [`docs/superpowers/plans/2026-04-24-phase3-ops.md`](docs/superpowers/plans/2026-04-24-phase3-ops.md).
+- Backups: manual + cron-scheduled, download, restore (triple-confirm), retention
+- Schedules: cron-driven restart + broadcast / backup / custom-RCON, advisory-locked runner
+- Settings page: Discord outgoing webhook + per-event rules, user role management, API tokens
+
+### Planned for 0.5.0 (Phase 4 — Live data)
+See [`docs/superpowers/plans/2026-04-24-phase4-live-data.md`](docs/superpowers/plans/2026-04-24-phase4-live-data.md).
+- Companion Lua mod (`mods/pz-crcon/`) posting HMAC-signed batched
+  webhooks with positions, deaths, helicopter / generator / chat events
+- SSE `/api/stream/positions` (anonymised public, precise admin)
+- `WorldEvent` model, `/api/events`, `/api/deaths`
+- Death markers + event overlay on the Knox map
+- Discord notifications on real game events
 
 [Unreleased]: https://github.com/KasheK420/pz-crcon/compare/main...HEAD
