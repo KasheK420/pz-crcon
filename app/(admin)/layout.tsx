@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { getSession } from "@/lib/auth/session";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
@@ -10,14 +9,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!session) {
     redirect("/api/auth/signin/discord");
   }
-  const h = await headers();
-  const path = h.get("x-pathname") ?? "/admin";
+  // Sidebar + TopbarTitle now read the live pathname via `usePathname()`
+  // as client components; we no longer thread `currentPath` through the
+  // layout (it was stale across client-side `<Link>` navigations).
   return (
     <>
       <div className="shell">
-        <Sidebar role={session.role} currentPath={path} />
+        <Sidebar role={session.role} />
         <div className="main">
-          <Topbar title={titleFor(path)} session={session} />
+          <Topbar session={session} />
           <div className="page-content">{children}</div>
         </div>
         <TweaksPanel />
@@ -29,15 +29,4 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       </div>
     </>
   );
-}
-
-function titleFor(path: string): string {
-  if (path === "/admin") return "Overview";
-  if (path === "/admin/rcon") return "RCON Terminal";
-  if (path === "/admin/players") return "Players";
-  if (path === "/admin/whitelist") return "Whitelist";
-  if (path === "/admin/logs") return "Server Logs";
-  if (path === "/admin/config") return "Server Config";
-  if (path === "/admin/startup") return "Startup Config";
-  return "Admin";
 }

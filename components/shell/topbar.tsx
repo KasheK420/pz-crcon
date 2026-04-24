@@ -1,17 +1,12 @@
 import Link from "next/link";
 import { signOut } from "@/auth";
 import type { SessionInfo } from "@/lib/auth/session";
+import { TopbarTitle } from "./topbar-title";
 
-export function Topbar({
-  title,
-  session,
-}: {
-  title: string;
-  session: SessionInfo | null;
-}) {
+export function Topbar({ session }: { session: SessionInfo | null }) {
   return (
     <header className="topbar">
-      <h1 className="topbar-title stencil">{title}</h1>
+      <TopbarTitle />
       <div className="topbar-trail">
         <span className="live-dot" title="Connected" />
         {session ? (
