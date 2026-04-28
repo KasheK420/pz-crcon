@@ -49,23 +49,23 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "4.0.0",
+    "@tailwindcss/postcss": "4.2.4",
     "@types/dockerode": "^4.0.1",
     "@types/leaflet": "^1.9.21",
-    "@types/node": "22.10.5",
+    "@types/node": "25.6.0",
     "@types/react": "19.0.7",
     "@types/react-dom": "19.0.3",
     "@types/ws": "^8.18.1",
-    "eslint": "9.18.0",
-    "eslint-config-next": "15.1.4",
+    "eslint": "10.2.1",
+    "eslint-config-next": "16.2.4",
     "pino-pretty": "^13.1.3",
-    "postcss": "8.5.1",
-    "prettier": "3.4.2",
-    "prisma": "5.22.0",
-    "tailwindcss": "4.0.0",
-    "tsx": "4.19.2",
-    "typescript": "5.7.3",
-    "vitest": "2.1.8"
+    "postcss": "8.5.12",
+    "prettier": "3.8.3",
+    "prisma": "7.8.0",
+    "tailwindcss": "4.2.4",
+    "tsx": "4.21.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.5"
   },
   "pnpm": {
     "overrides": {
